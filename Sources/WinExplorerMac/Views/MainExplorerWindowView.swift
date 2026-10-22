@@ -37,27 +37,10 @@ public struct MainExplorerWindowView: View {
                         }
 
                         // Active Tab Content
-                        Group {
-                            switch currentTab.destination {
-                            case .home:
-                                Win11HomeView(
-                                    windowVM: windowVM,
-                                    tab: currentTab,
-                                    quickAccess: windowVM.quickAccess
-                                )
-                            case .thisPC:
-                                Win11ThisPCView(
-                                    windowVM: windowVM,
-                                    tab: currentTab
-                                )
-                            case .directory:
-                                Win11FolderContentView(
-                                    windowVM: windowVM,
-                                    tab: currentTab,
-                                    clipboard: windowVM.clipboard
-                                )
-                            }
-                        }
+                        ActiveTabContentHostView(
+                            windowVM: windowVM,
+                            tab: currentTab
+                        )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                         if windowVM.sidePaneMode != .none {
@@ -239,5 +222,34 @@ public struct MainExplorerWindowView: View {
         .opacity(0)
         .frame(width: 0, height: 0)
         .allowsHitTesting(false)
+    }
+}
+
+private struct ActiveTabContentHostView: View {
+    @ObservedObject var windowVM: ExplorerWindowViewModel
+    @ObservedObject var tab: ExplorerTabViewModel
+
+    var body: some View {
+        Group {
+            switch tab.destination {
+            case .home:
+                Win11HomeView(
+                    windowVM: windowVM,
+                    tab: tab,
+                    quickAccess: windowVM.quickAccess
+                )
+            case .thisPC:
+                Win11ThisPCView(
+                    windowVM: windowVM,
+                    tab: tab
+                )
+            case .directory:
+                Win11FolderContentView(
+                    windowVM: windowVM,
+                    tab: tab,
+                    clipboard: windowVM.clipboard
+                )
+            }
+        }
     }
 }

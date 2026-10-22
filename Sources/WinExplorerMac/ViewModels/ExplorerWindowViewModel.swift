@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 import AppKit
 
 public struct ContextMenuRequest: Identifiable {
@@ -9,7 +10,11 @@ public struct ContextMenuRequest: Identifiable {
 }
 
 public final class ExplorerWindowViewModel: ObservableObject {
-    @Published public var tabs: [ExplorerTabViewModel]
+    @Published public var tabs: [ExplorerTabViewModel] {
+        didSet {
+            bindTabObservers()
+        }
+    }
     @Published public var activeTabId: UUID
     @Published public var sidePaneMode: ExplorerSidePaneMode = .none
     @Published public var isSidebarVisible: Bool = true
@@ -24,11 +29,31 @@ public final class ExplorerWindowViewModel: ObservableObject {
     @Published public var extractZipSourceURL: URL? = nil
     @Published public var isEditingAddressBar: Bool = false
 
+    private var tabCancellables: [UUID: AnyCancellable] = [:]
+    private var serviceCancellables = Set<AnyCancellable>()
+
     public init() {
         let initialTab = ExplorerTabViewModel(initialDestination: .home)
         self.tabs = [initialTab]
         self.activeTabId = initialTab.id
+        bindTabObservers()
+        clipboard.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &serviceCancellables)
+        quickAccess.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &serviceCancellables)
         refreshVolumes()
+    }
+
+    private func bindTabObservers() {
+        let currentIds = Set(tabs.map(\.id))
+        tabCancellables = tabCancellables.filter { currentIds.contains($0.key) }
+        for tab in tabs where tabCancellables[tab.id] == nil {
+            tabCancellables[tab.id] = tab.objectWillChange.sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+        }
     }
 
     public var activeTab: ExplorerTabViewModel {
