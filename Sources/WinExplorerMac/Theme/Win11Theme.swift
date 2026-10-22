@@ -182,9 +182,12 @@ public struct Win11ItemIconView: View {
     public let item: FileItem
     public var size: CGFloat = 44
 
+    @State private var thumbnail: NSImage?
+
     public init(item: FileItem, size: CGFloat = 44) {
         self.item = item
         self.size = size
+        _thumbnail = State(initialValue: ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size))
     }
 
     public var body: some View {
@@ -200,12 +203,36 @@ public struct Win11ItemIconView: View {
                 ZStack {
                     Win11FolderIconView(size: size, badgeSymbol: "doc.zipper", badgeColor: Color.orange)
                 }
+            } else if let thumbnail = thumbnail ?? ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size) {
+                Image(nsImage: thumbnail)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: size, height: size)
+                    .clipShape(RoundedRectangle(cornerRadius: max(2.5, size * 0.08), style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: max(2.5, size * 0.08), style: .continuous)
+                            .stroke(Color.primary.opacity(0.15), lineWidth: 0.75)
+                    )
+                    .shadow(color: Color.black.opacity(0.20), radius: max(1, size * 0.04), x: 0, y: 1)
             } else {
                 Image(nsImage: item.systemIcon)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
                     .frame(width: size, height: size)
+            }
+        }
+        .task(id: "\(item.url.path)|\(Int(size))") {
+            guard item.isImage || item.isQuickLookThumbnailSupported else { return }
+            if let cached = ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size) {
+                thumbnail = cached
+                return
+            }
+            ThumbnailService.shared.loadThumbnail(for: item, targetSize: size) { loaded in
+                if let loaded {
+                    thumbnail = loaded
+                }
             }
         }
     }

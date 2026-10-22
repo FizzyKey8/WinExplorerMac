@@ -102,7 +102,11 @@ public struct FileItem: Identifiable, Hashable {
     }
 
     public var isImage: Bool {
-        ["png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tiff", "svg", "ico"].contains(fileExtension)
+        ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "tiff", "tif", "svg", "ico", "avif", "icns"].contains(fileExtension)
+    }
+
+    public var isQuickLookThumbnailSupported: Bool {
+        ["pdf", "mp4", "mov", "m4v", "avi", "mkv"].contains(fileExtension)
     }
 
     public var isTextPreviewable: Bool {
