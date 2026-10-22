@@ -13,8 +13,14 @@ jobs:
     name: Build WinExplorerMac.app & Create GitHub Release
     runs-on: macos-14
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout repository (native git)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
 
       - name: Sync Info.plist version from Git Tag
         run: |
@@ -26,11 +32,19 @@ jobs:
           chmod +x build_mac_app.sh
           ./build_mac_app.sh
 
-      - name: Publish GitHub Release with DMG and ZIP
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "WinExplorerMac ${{ github.ref_name }}"
-          generate_release_notes: true
-          files: |
-            build/WinExplorerMac.dmg
-            build/WinExplorerMac-macOS.zip
+      - name: Publish GitHub Release with DMG and ZIP (native gh CLI)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              build/WinExplorerMac.dmg \
+              build/WinExplorerMac-macOS.zip \
+              --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              build/WinExplorerMac.dmg \
+              build/WinExplorerMac-macOS.zip \
+              --title "WinExplorerMac ${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi

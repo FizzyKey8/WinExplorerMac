@@ -283,7 +283,6 @@ public final class FileSystemService {
     }
 
     private func uniqueCopyDestinationURL(for sourceURL: URL, in directory: URL, suffix: String) -> URL {
-        let name = sourceURL.lastPathComponent
         let ext = sourceURL.pathExtension
         let stem = sourceURL.deletingPathExtension().lastPathComponent
 
