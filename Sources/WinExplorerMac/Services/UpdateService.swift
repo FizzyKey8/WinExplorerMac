@@ -320,6 +320,8 @@ public final class UpdateService: ObservableObject {
         mkdir -p "$(dirname "\(targetAppURL.path)")"
         rm -rf "\(targetAppURL.path)"
         mv -f "\(newAppURL.path)" "\(targetAppURL.path)"
+        xattr -cr "\(targetAppURL.path)" 2>/dev/null || true
+        codesign --force --deep --sign - "\(targetAppURL.path)" 2>/dev/null || true
         touch "\(targetAppURL.path)"
         open "\(targetAppURL.path)"
         rm -f "\(scriptURL.path)"
