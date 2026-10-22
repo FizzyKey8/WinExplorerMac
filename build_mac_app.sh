@@ -25,5 +25,10 @@ fi
 echo "🔏 Firmando localmente la aplicación con entitlements..."
 codesign --force --deep --sign - --entitlements "Resources/WinExplorerMac.entitlements" "${BUNDLE_DIR}"
 
+echo "🗜️ Generando paquete comprimido para GitHub Releases (build/${APP_NAME}-macOS.zip)..."
+rm -f "build/${APP_NAME}-macOS.zip"
+ditto -c -k --keepParent "${BUNDLE_DIR}" "build/${APP_NAME}-macOS.zip"
+
 echo "✅ ¡Listo! Aplicación creada en: ${BUNDLE_DIR}"
+echo "📦 Paquete para Release listo en: build/${APP_NAME}-macOS.zip"
 echo "Puedes abrirla con: open \"${BUNDLE_DIR}\""

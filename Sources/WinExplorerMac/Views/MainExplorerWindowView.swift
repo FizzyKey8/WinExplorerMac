@@ -3,6 +3,7 @@ import AppKit
 
 public struct MainExplorerWindowView: View {
     @StateObject private var windowVM = ExplorerWindowViewModel()
+    @ObservedObject private var updateService = UpdateService.shared
     @Environment(\.colorScheme) private var colorScheme
 
     public init() {}
@@ -75,9 +76,17 @@ public struct MainExplorerWindowView: View {
         .frame(minWidth: 960, minHeight: 600)
         .background(Win11Theme.windowMicaBackground(colorScheme))
         .ignoresSafeArea(.container, edges: .top)
+        .onAppear {
+            updateService.checkOnLaunchIfNeeded()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .win11TriggerRenameShortcut)) { _ in
             if currentTab.renamingURL == nil {
                 currentTab.beginRename()
+            }
+        }
+        .sheet(isPresented: $updateService.isUpdateModalPresented) {
+            Win11UpdateModalView(updater: updateService) {
+                updateService.isUpdateModalPresented = false
             }
         }
         .sheet(item: $windowVM.propertiesTargetItem) { targetItem in

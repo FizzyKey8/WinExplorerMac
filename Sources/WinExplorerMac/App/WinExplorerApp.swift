@@ -20,6 +20,14 @@ public struct WinExplorerApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 740)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Buscar actualizaciones...") {
+                    Task { @MainActor in
+                        UpdateService.shared.openUpdateModalAndCheck()
+                    }
+                }
+                .keyboardShortcut("u", modifiers: [.command])
+            }
             CommandGroup(replacing: .newItem) {
                 // Handled directly inside MainExplorerWindowView shortcuts
             }

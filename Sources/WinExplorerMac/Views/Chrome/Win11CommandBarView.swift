@@ -4,6 +4,7 @@ public struct Win11CommandBarView: View {
     @ObservedObject var windowVM: ExplorerWindowViewModel
     @ObservedObject var tab: ExplorerTabViewModel
     @ObservedObject var clipboard: FileClipboardService
+    @ObservedObject private var updateService = UpdateService.shared
     @Environment(\.colorScheme) private var colorScheme
 
     public init(windowVM: ExplorerWindowViewModel, tab: ExplorerTabViewModel, clipboard: FileClipboardService) {
@@ -211,8 +212,44 @@ public struct Win11CommandBarView: View {
 
             Spacer()
 
-            // Right Side: Details Pane / Preview Pane toggles (Windows 11 right command bar)
+            // Right Side: Update Check + Details Pane / Preview Pane toggles
             HStack(spacing: 4) {
+                Button {
+                    updateService.openUpdateModalAndCheck()
+                } label: {
+                    HStack(spacing: 5) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: updateService.availableUpdate != nil ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
+                                .font(.system(size: 12))
+                                .foregroundStyle(updateService.availableUpdate != nil ? Win11Theme.accentBlue(colorScheme) : .primary)
+                            if updateService.availableUpdate != nil {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 6, height: 6)
+                                    .offset(x: 2, y: -2)
+                            }
+                        }
+                        if let rel = updateService.availableUpdate {
+                            Text("Actualizar (v\(rel.cleanVersion))")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(Win11Theme.accentBlue(colorScheme))
+                        } else {
+                            Text("Actualizar")
+                                .font(.system(size: 12))
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(updateService.availableUpdate != nil ? Win11Theme.selectionFill(colorScheme) : Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("Buscar actualizaciones en GitHub (Cmd+U)")
+
+                commandDivider
+
                 Button {
                     windowVM.sidePaneMode = (windowVM.sidePaneMode == .preview) ? .none : .preview
                 } label: {

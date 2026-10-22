@@ -1,0 +1,35 @@
+name: Build & Publish macOS Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-macos:
+    name: Build WinExplorerMac.app & Create GitHub Release
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Sync Info.plist version from Git Tag
+        run: |
+          CLEAN_VER="${GITHUB_REF_NAME#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${CLEAN_VER}" Resources/Info.plist
+
+      - name: Build & Package WinExplorerMac.app
+        run: |
+          chmod +x build_mac_app.sh
+          ./build_mac_app.sh
+
+      - name: Publish GitHub Release with WinExplorerMac-macOS.zip
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "WinExplorerMac ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            build/WinExplorerMac-macOS.zip
