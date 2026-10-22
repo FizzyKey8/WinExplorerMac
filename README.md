@@ -44,11 +44,11 @@ Aplicación nativa para **macOS 14+ (Sonoma / Sequoia)** escrita en **Swift 5.9+
 3. Selecciona **My Mac** como destino y presiona **`Cmd + R`** para compilar y ejecutar.
 
 ### Opción 2: Generar la app `.app` desde Terminal
-Ejecuta el script incluido para compilar en modo Release y empaquetar `Win11ExplorerMac.app`:
+Ejecuta el script incluido para compilar en modo Release y empaquetar `WinExplorerMac.app`:
 ```bash
 chmod +x build_mac_app.sh
 ./build_mac_app.sh
-open "build/Win11ExplorerMac.app"
+open "build/WinExplorerMac.app"
 ```
 
 ---

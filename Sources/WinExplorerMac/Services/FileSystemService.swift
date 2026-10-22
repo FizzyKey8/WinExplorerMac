@@ -133,7 +133,7 @@ public final class FileSystemService {
     public func renameItem(at url: URL, to newName: String) throws -> URL {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains("/") else {
-            throw NSError(domain: "Win11ExplorerMac", code: 400, userInfo: [
+            throw NSError(domain: "WinExplorerMac", code: 400, userInfo: [
                 NSLocalizedDescriptionKey: "Los nombres de archivo no pueden estar vacíos ni contener el carácter '/'."
             ])
         }

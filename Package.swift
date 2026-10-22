@@ -2,21 +2,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "Win11ExplorerMac",
+    name: "WinExplorerMac",
     defaultLocalization: "es",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .executable(
-            name: "Win11ExplorerMac",
-            targets: ["Win11ExplorerMac"]
+            name: "WinExplorerMac",
+            targets: ["WinExplorerMac"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "Win11ExplorerMac",
-            path: "Sources/Win11ExplorerMac"
+            name: "WinExplorerMac",
+            path: "Sources/WinExplorerMac"
         )
     ]
 )

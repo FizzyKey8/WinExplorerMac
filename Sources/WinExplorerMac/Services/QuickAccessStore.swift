@@ -37,8 +37,8 @@ public final class QuickAccessStore: ObservableObject {
     @Published public private(set) var pinnedFolders: [PinnedFolderItem] = []
     @Published public private(set) var recentFiles: [RecentFileRecord] = []
 
-    private let pinnedKey = "Win11ExplorerMac.PinnedFolders.v1"
-    private let recentsKey = "Win11ExplorerMac.RecentFiles.v1"
+    private let pinnedKey = "WinExplorerMac.PinnedFolders.v1"
+    private let recentsKey = "WinExplorerMac.RecentFiles.v1"
 
     public init() {
         loadPinnedFolders()
