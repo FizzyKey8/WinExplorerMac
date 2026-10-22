@@ -4,7 +4,8 @@
 # Swift Package Manager & Build Artifacts
 .build/
 .swiftpm/
-build/
+build/*
+!build/WinExplorerMac.dmg
 Packages/
 
 # Xcode

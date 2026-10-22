@@ -143,11 +143,15 @@ public final class UpdateService: ObservableObject {
                 var foundAssetURL: URL? = nil
                 var foundAssetName: String? = nil
                 if let assets = json["assets"] as? [[String: Any]] {
-                    for asset in assets {
-                        if let assetName = asset["name"] as? String,
-                           let downloadStr = asset["browser_download_url"] as? String,
-                           assetName.lowercased().hasSuffix(".zip"),
-                           let url = URL(string: downloadStr) {
+                    // Prefer .zip first, fallback to .dmg
+                    for ext in [".zip", ".dmg"] {
+                        if let match = assets.first(where: {
+                            (($0["name"] as? String)?.lowercased().hasSuffix(ext) == true) &&
+                            (($0["browser_download_url"] as? String) != nil)
+                        }),
+                        let assetName = match["name"] as? String,
+                        let downloadStr = match["browser_download_url"] as? String,
+                        let url = URL(string: downloadStr) {
                             foundAssetURL = url
                             foundAssetName = assetName
                             break

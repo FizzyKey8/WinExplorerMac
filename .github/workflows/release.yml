@@ -26,10 +26,11 @@ jobs:
           chmod +x build_mac_app.sh
           ./build_mac_app.sh
 
-      - name: Publish GitHub Release with WinExplorerMac-macOS.zip
+      - name: Publish GitHub Release with DMG and ZIP
         uses: softprops/action-gh-release@v2
         with:
           name: "WinExplorerMac ${{ github.ref_name }}"
           generate_release_notes: true
           files: |
+            build/WinExplorerMac.dmg
             build/WinExplorerMac-macOS.zip

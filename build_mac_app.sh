@@ -29,6 +29,17 @@ echo "🗜️ Generando paquete comprimido para GitHub Releases (build/${APP_NAM
 rm -f "build/${APP_NAME}-macOS.zip"
 ditto -c -k --keepParent "${BUNDLE_DIR}" "build/${APP_NAME}-macOS.zip"
 
+echo "💿 Creando instalador de disco macOS (build/${APP_NAME}.dmg)..."
+DMG_STAGING="build/dmg_staging"
+DMG_PATH="build/${APP_NAME}.dmg"
+rm -rf "${DMG_STAGING}" "${DMG_PATH}"
+mkdir -p "${DMG_STAGING}"
+cp -R "${BUNDLE_DIR}" "${DMG_STAGING}/${APP_NAME}.app"
+ln -s /Applications "${DMG_STAGING}/Applications"
+hdiutil create -volname "${APP_NAME}" -srcfolder "${DMG_STAGING}" -ov -format UDZO "${DMG_PATH}" >/dev/null
+rm -rf "${DMG_STAGING}"
+
 echo "✅ ¡Listo! Aplicación creada en: ${BUNDLE_DIR}"
-echo "📦 Paquete para Release listo en: build/${APP_NAME}-macOS.zip"
+echo "💿 Instalador DMG creado en: ${DMG_PATH}"
+echo "📦 Paquete ZIP para Release en: build/${APP_NAME}-macOS.zip"
 echo "Puedes abrirla con: open \"${BUNDLE_DIR}\""

@@ -18,8 +18,9 @@ echo "📌 Configurando versión ${CLEAN_VER} en Resources/Info.plist..."
 echo "🔨 Compilando y empaquetando aplicación local..."
 ./build_mac_app.sh
 
-echo "📝 Guardando cambios en Git y creando tag ${TAG_NAME}..."
+echo "📝 Guardando cambios (incluyendo build/WinExplorerMac.dmg) en Git y creando tag ${TAG_NAME}..."
 git add -A
+git add -f build/WinExplorerMac.dmg
 git commit -m "chore(release): ${TAG_NAME} - ${RELEASE_MSG}" || echo "ℹ️ Sin cambios nuevos por commitear."
 git tag -f -a "${TAG_NAME}" -m "${RELEASE_MSG}"
 
@@ -29,6 +30,6 @@ git push origin "${TAG_NAME}" --force
 
 echo ""
 echo "✅ ¡Versión ${TAG_NAME} publicada en GitHub!"
-echo "🔗 GitHub Actions compilará y adjuntará automáticamente WinExplorerMac-macOS.zip en:"
+echo "💿 Instalador DMG subido al repositorio en: build/WinExplorerMac.dmg"
+echo "🔗 GitHub Actions también adjuntará el .dmg y .zip en:"
 echo "   https://github.com/FizzyKey8/WinExplorerMac/releases/tag/${TAG_NAME}"
-echo "📦 También tienes el paquete listo localmente en: build/WinExplorerMac-macOS.zip"
