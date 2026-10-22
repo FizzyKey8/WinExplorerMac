@@ -4,6 +4,7 @@ import AppKit
 @main
 public struct WinExplorerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.openWindow) private var openWindow
 
     public init() {
         // Guarantee macOS treats this as a regular desktop GUI application with a Dock icon
@@ -11,11 +12,14 @@ public struct WinExplorerApp: App {
     }
 
     public var body: some Scene {
-        WindowGroup("Explorador de archivos") {
+        WindowGroup("Explorador de archivos", id: "main-explorer") {
             MainExplorerWindowView()
                 .background(WindowAccessor { window in
-                    configureWindow(window)
+                    configureWindowIfNeeded(window)
                 })
+                .onReceive(NotificationCenter.default.publisher(for: .win11ReopenMainWindow)) { _ in
+                    openWindow(id: "main-explorer")
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 740)
@@ -29,24 +33,37 @@ public struct WinExplorerApp: App {
                 .keyboardShortcut("u", modifiers: [.command])
             }
             CommandGroup(replacing: .newItem) {
-                // Handled directly inside MainExplorerWindowView shortcuts
+                Button("Nueva ventana del Explorador") {
+                    AppDelegate.showOrCreateMainWindow(using: openWindow)
+                }
+                .keyboardShortcut("n", modifiers: [.command])
             }
         }
     }
 
-    private func configureWindow(_ window: NSWindow) {
+    private func configureWindowIfNeeded(_ window: NSWindow) {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = false
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApplication.shared.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
+        // Keep the window instance alive when closed with the red 'X' button
+        // so the app stays in the Dock and reopens the window on Dock click.
+        window.isReleasedWhenClosed = false
+        AppDelegate.mainExplorerWindow = window
+
+        if !AppDelegate.configuredWindows.contains(ObjectIdentifier(window)) {
+            AppDelegate.configuredWindows.insert(ObjectIdentifier(window))
+            window.center()
+            window.makeKeyAndOrderFront(nil)
+            NSApplication.shared.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 }
 
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    public static var configuredWindows = Set<ObjectIdentifier>()
+    public static var mainExplorerWindow: NSWindow?
     private var keyMonitor: Any?
 
     public override init() {
@@ -70,6 +87,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.titlebarAppearsTransparent = true
                 window.styleMask.insert(.fullSizeContentView)
                 window.isMovableByWindowBackground = false
+                window.isReleasedWhenClosed = false
+                if Self.mainExplorerWindow == nil {
+                    Self.mainExplorerWindow = window
+                }
                 window.makeKeyAndOrderFront(nil)
             }
         }
@@ -83,13 +104,46 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Keep the app running in the Dock when the window is closed with the red 'X' button
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+
+    // Reopen the window immediately when clicking the Dock icon
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            for window in sender.windows {
-                window.makeKeyAndOrderFront(nil)
+        if let window = Self.mainExplorerWindow {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
             }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return true
         }
+
+        for window in sender.windows where Self.configuredWindows.contains(ObjectIdentifier(window)) {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return true
+        }
+
+        NotificationCenter.default.post(name: .win11ReopenMainWindow, object: nil)
         return true
+    }
+
+    @MainActor
+    public static func showOrCreateMainWindow(using openWindow: OpenWindowAction) {
+        if let window = mainExplorerWindow {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            openWindow(id: "main-explorer")
+        }
     }
 }
 
@@ -121,4 +175,5 @@ public struct WindowAccessor: NSViewRepresentable {
 
 public extension Notification.Name {
     static let win11TriggerRenameShortcut = Notification.Name("win11TriggerRenameShortcut")
+    static let win11ReopenMainWindow = Notification.Name("win11ReopenMainWindow")
 }
