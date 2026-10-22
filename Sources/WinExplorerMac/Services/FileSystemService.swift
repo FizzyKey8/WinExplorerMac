@@ -18,6 +18,10 @@ public final class FileSystemService {
         .localizedTypeDescriptionKey
     ]
 
+    public static var trashDirectoryURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash").standardizedFileURL
+    }
+
     private init() {}
 
     // MARK: - List Directory Contents
@@ -27,19 +31,108 @@ public final class FileSystemService {
             options.insert(.skipsHiddenFiles)
         }
 
-        let urls = try fileManager.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: Array(resourceKeys),
-            options: options
-        )
+        do {
+            let urls = try fileManager.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: Array(resourceKeys),
+                options: options
+            )
 
-        return urls.compactMap { itemURL in
-            makeFileItem(from: itemURL)
+            return urls.compactMap { itemURL in
+                makeFileItem(from: itemURL)
+            }
+        } catch {
+            if url.standardizedFileURL == Self.trashDirectoryURL {
+                if let fallbackItems = listTrashViaFinder(includeHidden: includeHidden) {
+                    return fallbackItems
+                }
+            }
+            throw error
         }
+    }
+
+    private func listTrashViaFinder(includeHidden: Bool) -> [FileItem]? {
+        let script = """
+        tell application "Finder"
+            set itemNames to name of every item of trash
+            if (count of itemNames) is 0 then return ""
+            set itemKinds to kind of every item of trash
+            set outList to {}
+            repeat with i from 1 to count of itemNames
+                set n to item i of itemNames
+                set k to item i of itemKinds
+                set end of outList to (n as string) & "\t" & (k as string)
+            end repeat
+            set AppleScript's text item delimiters to "\n"
+            return outList as string
+        end tell
+        """
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", script]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if output.isEmpty { return [] }
+            let trashRoot = Self.trashDirectoryURL
+            return output.components(separatedBy: "\n").compactMap { line -> FileItem? in
+                let parts = line.components(separatedBy: "\t")
+                guard parts.count >= 2 else { return nil }
+                let name = parts[0]
+                if !includeHidden && name.hasPrefix(".") { return nil }
+                let kind = parts[1]
+                let lowerKind = kind.lowercased()
+                let isDir = lowerKind == "carpeta" || lowerKind == "folder"
+                let itemURL = trashRoot.appendingPathComponent(name)
+                return FileItem(
+                    url: itemURL,
+                    name: name,
+                    isDirectory: isDir,
+                    isHidden: name.hasPrefix("."),
+                    isSymlink: false,
+                    size: 0,
+                    creationDate: nil,
+                    modificationDate: Date(),
+                    lastAccessDate: nil,
+                    fileTypeDescription: kind
+                )
+            }
+        } catch {
+            return nil
+        }
+    }
+
+    public func emptyTrash() {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", "tell application \"Finder\" to empty the trash"]
+        try? proc.run()
+        proc.waitUntilExit()
     }
 
     public func makeFileItem(from url: URL) -> FileItem? {
         let stdURL = url.standardizedFileURL
+        if stdURL == Self.trashDirectoryURL {
+            return FileItem(
+                url: stdURL,
+                name: "Basurero",
+                isDirectory: true,
+                isHidden: false,
+                isSymlink: false,
+                size: 0,
+                creationDate: nil,
+                modificationDate: nil,
+                lastAccessDate: nil,
+                fileTypeDescription: "Papelera de reciclaje",
+                posixPermissions: 0o700
+            )
+        }
         guard fileManager.fileExists(atPath: stdURL.path) else { return nil }
 
         let values = try? stdURL.resourceValues(forKeys: resourceKeys)

@@ -98,6 +98,7 @@ public enum NavigationDestination: Equatable, Hashable {
         if std == home.appendingPathComponent("Pictures") { return "Imágenes" }
         if std == home.appendingPathComponent("Music") { return "Música" }
         if std == home.appendingPathComponent("Movies") { return "Videos" }
+        if std == home.appendingPathComponent(".Trash") { return "Basurero" }
         return std.lastPathComponent.isEmpty ? "Macintosh HD" : std.lastPathComponent
     }
 }

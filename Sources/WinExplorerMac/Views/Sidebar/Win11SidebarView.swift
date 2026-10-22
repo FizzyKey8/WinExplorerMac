@@ -134,6 +134,33 @@ public struct Win11SidebarView: View {
                         ) {
                             tab.navigate(to: .directory(appsURL))
                         }
+
+                        // Trash / Recycle Bin shortcut
+                        let trashURL = FileSystemService.trashDirectoryURL
+                        sidebarRow(
+                            title: "Basurero",
+                            isSelected: tab.destination == .directory(trashURL),
+                            indentation: 10,
+                            leadingIcon: {
+                                Win11FolderIconView(size: 16, badgeSymbol: "trash.fill", badgeColor: Color(red: 0.45, green: 0.50, blue: 0.58))
+                            },
+                            trailingIcon: nil
+                        ) {
+                            tab.navigate(to: .directory(trashURL))
+                        }
+                        .contextMenu {
+                            Button("Abrir Basurero") {
+                                tab.navigate(to: .directory(trashURL))
+                            }
+                            Button("Abrir en una pestaña nueva") {
+                                windowVM.createNewTab(at: .directory(trashURL), activate: true)
+                            }
+                            Divider()
+                            Button("Vaciar Basurero...") {
+                                FileSystemService.shared.emptyTrash()
+                                tab.reload()
+                            }
+                        }
                     }
                     .padding(.top, 2)
                 } label: {

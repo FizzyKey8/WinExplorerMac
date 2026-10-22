@@ -104,31 +104,48 @@ public final class QuickAccessStore: ObservableObject {
     }
 
     private func loadPinnedFolders() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        let trashPath = home.appendingPathComponent(".Trash").path
+        let trashMigrationKey = "WinExplorerMac.TrashPinnedMigration.v1"
+
         if let data = UserDefaults.standard.data(forKey: pinnedKey),
            let decoded = try? JSONDecoder().decode([PinnedFolderItem].self, from: data),
            !decoded.isEmpty {
-            self.pinnedFolders = decoded.filter { FileManager.default.fileExists(atPath: $0.path) }
-            if !self.pinnedFolders.isEmpty {
+            var valid = decoded.filter {
+                $0.path == trashPath || FileManager.default.fileExists(atPath: $0.path)
+            }
+            if !UserDefaults.standard.bool(forKey: trashMigrationKey) {
+                UserDefaults.standard.set(true, forKey: trashMigrationKey)
+                if !valid.contains(where: { $0.path == trashPath }) {
+                    valid.append(PinnedFolderItem(path: trashPath, customTitle: "Basurero", isSystemDefault: true))
+                }
+            }
+            if !valid.isEmpty {
+                self.pinnedFolders = valid
+                savePinnedFolders()
                 return
             }
         }
 
         // Default Windows 11 Quick Access libraries mapped to macOS user folders
-        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         let defaults: [(String, String)] = [
             ("Desktop", "Escritorio"),
             ("Downloads", "Descargas"),
             ("Documents", "Documentos"),
             ("Pictures", "Imágenes"),
             ("Music", "Música"),
-            ("Movies", "Videos")
+            ("Movies", "Videos"),
+            (".Trash", "Basurero")
         ]
 
         self.pinnedFolders = defaults.compactMap { folderName, localizedName in
             let url = home.appendingPathComponent(folderName)
-            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            if folderName != ".Trash" && !FileManager.default.fileExists(atPath: url.path) {
+                return nil
+            }
             return PinnedFolderItem(path: url.path, customTitle: localizedName, isSystemDefault: true)
         }
+        UserDefaults.standard.set(true, forKey: trashMigrationKey)
         savePinnedFolders()
     }
 

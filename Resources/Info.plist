@@ -36,5 +36,7 @@
 	<string>WinExplorerMac necesita acceso a unidades de red montadas.</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>WinExplorerMac necesita acceso a tus unidades externas para mostrarlas en Este Equipo.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>WinExplorerMac necesita comunicarse con Finder para mostrar y vaciar los elementos del Basurero.</string>
 </dict>
 </plist>

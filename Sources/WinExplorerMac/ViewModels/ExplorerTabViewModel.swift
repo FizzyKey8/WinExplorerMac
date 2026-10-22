@@ -193,6 +193,10 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             navigate(to: .thisPC)
             return
         }
+        if ["basurero", "papelera", "papelera de reciclaje", "trash", "~/.trash"].contains(trimmed.lowercased()) {
+            navigate(to: .directory(FileSystemService.trashDirectoryURL))
+            return
+        }
 
         let expanded = (trimmed as NSString).expandingTildeInPath
         let targetURL = URL(fileURLWithPath: expanded).standardizedFileURL

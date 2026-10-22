@@ -252,6 +252,8 @@ public struct Win11ItemIconView: View {
             return ("music.note", Color(red: 0.92, green: 0.28, blue: 0.48))
         } else if std == home.appendingPathComponent("Movies") {
             return ("film.fill", Color(red: 0.90, green: 0.45, blue: 0.15))
+        } else if std == home.appendingPathComponent(".Trash") {
+            return ("trash.fill", Color(red: 0.45, green: 0.50, blue: 0.58))
         }
         return nil
     }
