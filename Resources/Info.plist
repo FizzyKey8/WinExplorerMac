@@ -2,39 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>es</string>
-    <key>CFBundleDisplayName</key>
-    <string>Explorador de archivos</string>
-    <key>CFBundleExecutable</key>
-    <string>WinExplorerMac</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.winexplorermac.app</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>WinExplorerMac</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSDesktopFolderUsageDescription</key>
-    <string>WinExplorerMac necesita acceso a tu carpeta Escritorio para explorar y gestionar tus archivos.</string>
-    <key>NSDocumentsFolderUsageDescription</key>
-    <string>WinExplorerMac necesita acceso a tu carpeta Documentos para explorar y gestionar tus archivos.</string>
-    <key>NSDownloadsFolderUsageDescription</key>
-    <string>WinExplorerMac necesita acceso a tu carpeta Descargas para explorar y gestionar tus archivos.</string>
-    <key>NSRemovableVolumesUsageDescription</key>
-    <string>WinExplorerMac necesita acceso a tus unidades externas para mostrarlas en Este Equipo.</string>
-    <key>NSNetworkVolumesUsageDescription</key>
-    <string>WinExplorerMac necesita acceso a unidades de red montadas.</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>es</string>
+	<key>CFBundleDisplayName</key>
+	<string>Explorador de archivos</string>
+	<key>CFBundleExecutable</key>
+	<string>WinExplorerMac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.winexplorermac.app</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>WinExplorerMac</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>WinExplorerMac necesita acceso a tu carpeta Escritorio para explorar y gestionar tus archivos.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>WinExplorerMac necesita acceso a tu carpeta Documentos para explorar y gestionar tus archivos.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>WinExplorerMac necesita acceso a tu carpeta Descargas para explorar y gestionar tus archivos.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>WinExplorerMac necesita acceso a unidades de red montadas.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>WinExplorerMac necesita acceso a tus unidades externas para mostrarlas en Este Equipo.</string>
 </dict>
 </plist>
