@@ -18,6 +18,9 @@ mkdir -p "${RESOURCES_DIR}"
 BIN_DIR="$(swift build -c release --show-bin-path)"
 cp "${BIN_DIR}/${APP_NAME}" "${MACOS_DIR}/${APP_NAME}"
 cp "Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
+if [ -f "Resources/AppIcon.icns" ]; then
+    cp "Resources/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+fi
 
 echo "🔏 Firmando localmente la aplicación con entitlements..."
 codesign --force --deep --sign - --entitlements "Resources/WinExplorerMac.entitlements" "${BUNDLE_DIR}"

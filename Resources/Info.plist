@@ -8,6 +8,8 @@
     <string>Explorador de archivos</string>
     <key>CFBundleExecutable</key>
     <string>WinExplorerMac</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.winexplorermac.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
