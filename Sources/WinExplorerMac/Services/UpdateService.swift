@@ -267,8 +267,9 @@ public final class UpdateService: ObservableObject {
             let targetAppURL = resolveTargetAppBundleURL()
             try launchDetachedReplacerScript(newAppURL: validNewApp, targetAppURL: targetAppURL)
 
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            NSApplication.shared.terminate(nil)
+            isUpdateModalPresented = false
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            exit(0)
         } catch {
             status = .error("Error durante la actualización automática: \(error.localizedDescription)")
         }
@@ -309,13 +310,16 @@ public final class UpdateService: ObservableObject {
 
         let scriptContent = """
         #!/usr/bin/env bash
-        # Wait for the running instance to close
-        for i in {1..30}; do
+        # Wait briefly for the running instance to close via exit(0)
+        for i in {1..6}; do
             if ! kill -0 \(currentPID) 2>/dev/null; then
                 break
             fi
-            sleep 0.2
+            sleep 0.15
         done
+        # Force close if still alive due to open modal sheet
+        kill -9 \(currentPID) 2>/dev/null || true
+        sleep 0.1
 
         mkdir -p "$(dirname "\(targetAppURL.path)")"
         rm -rf "\(targetAppURL.path)"
@@ -323,7 +327,7 @@ public final class UpdateService: ObservableObject {
         xattr -cr "\(targetAppURL.path)" 2>/dev/null || true
         codesign --force --deep --sign - "\(targetAppURL.path)" 2>/dev/null || true
         touch "\(targetAppURL.path)"
-        open "\(targetAppURL.path)"
+        open -n "\(targetAppURL.path)"
         rm -f "\(scriptURL.path)"
         """
 
