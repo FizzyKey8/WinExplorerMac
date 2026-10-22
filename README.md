@@ -1,4 +1,4 @@
-# Win11ExplorerMac — Explorador de Archivos Estilo Windows 11 para macOS
+# WinExplorerMac — Explorador de Archivos Estilo Windows 11 para macOS
 
 Aplicación nativa para **macOS 14+ (Sonoma / Sequoia)** escrita en **Swift 5.9+ / SwiftUI y AppKit**, diseñada para replicar la apariencia visual (Fluent UI / Mica, carpetas amarillas características) y todas las funciones clave del **Explorador de Archivos de Windows 11**.
 
