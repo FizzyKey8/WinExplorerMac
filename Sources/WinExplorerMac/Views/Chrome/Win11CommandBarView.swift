@@ -212,43 +212,38 @@ public struct Win11CommandBarView: View {
 
             Spacer()
 
-            // Right Side: Update Check + Details Pane / Preview Pane toggles
+            // Right Side: Update Badge (only shown when an update is available) + Details Pane / Preview Pane toggles
             HStack(spacing: 4) {
-                Button {
-                    updateService.openUpdateModalAndCheck()
-                } label: {
-                    HStack(spacing: 5) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: updateService.availableUpdate != nil ? "arrow.down.circle.fill" : "arrow.triangle.2.circlepath")
-                                .font(.system(size: 12))
-                                .foregroundStyle(updateService.availableUpdate != nil ? Win11Theme.accentBlue(colorScheme) : .primary)
-                            if updateService.availableUpdate != nil {
+                if let rel = updateService.availableUpdate {
+                    Button {
+                        updateService.openUpdateModalAndCheck()
+                    } label: {
+                        HStack(spacing: 5) {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Win11Theme.accentBlue(colorScheme))
                                 Circle()
                                     .fill(Color.green)
                                     .frame(width: 6, height: 6)
                                     .offset(x: 2, y: -2)
                             }
-                        }
-                        if let rel = updateService.availableUpdate {
                             Text("Actualizar (v\(rel.cleanVersion))")
                                 .font(.system(size: 11.5, weight: .semibold))
                                 .foregroundStyle(Win11Theme.accentBlue(colorScheme))
-                        } else {
-                            Text("Actualizar")
-                                .font(.system(size: 12))
                         }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(Win11Theme.selectionFill(colorScheme))
+                        )
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(updateService.availableUpdate != nil ? Win11Theme.selectionFill(colorScheme) : Color.clear)
-                    )
-                }
-                .buttonStyle(.plain)
-                .help("Buscar actualizaciones en GitHub (Cmd+U)")
+                    .buttonStyle(.plain)
+                    .help("Nueva versión disponible: v\(rel.cleanVersion) (Cmd+U)")
 
-                commandDivider
+                    commandDivider
+                }
 
                 Button {
                     windowVM.sidePaneMode = (windowVM.sidePaneMode == .preview) ? .none : .preview
