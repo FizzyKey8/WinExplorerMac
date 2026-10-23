@@ -1,72 +1,94 @@
 # WinExplorerMac — Explorador de Archivos Estilo Windows 11 para macOS
 
-Aplicación nativa para **macOS 14+ (Sonoma / Sequoia)** escrita en **Swift 5.9+ / SwiftUI y AppKit**, diseñada para replicar la apariencia visual (Fluent UI / Mica, carpetas amarillas características) y todas las funciones clave del **Explorador de Archivos de Windows 11**.
+Aplicación nativa para **macOS 14+ (Sonoma / Sequoia)** escrita en **Swift 5.9+ / SwiftUI y AppKit**, diseñada para replicar con máxima fidelidad la apariencia visual (Fluent UI / Mica, carpetas amarillas características, barra de comandos y pestañas) y las funciones clave del **Explorador de Archivos de Windows 11**.
+
+<div align="center">
+  <img src="Resources/Captura%20de%20pantalla.png" alt="WinExplorerMac - Vista Principal" width="95%" style="border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);" />
+</div>
+
+---
+
+## 🎨 Temas Visuales Integrados
+
+WinExplorerMac cuenta con un selector de temas en la barra de menús (**Tema**):
+
+| Windows 11 Clásico (Fluent) | Minimalista Oscuro (OLED) | Liquid Glass (Acrílico / Mica) |
+| :---: | :---: | :---: |
+| <img src="Resources/Captura%20de%20pantalla.png" alt="Tema Windows 11 Clásico" width="100%"/> | <img src="Resources/Captura%20de%20pantalla2.png" alt="Tema Minimalista Oscuro" width="100%"/> | <img src="Resources/Captura%20de%20pantalla3.png" alt="Tema Liquid Glass" width="100%"/> |
+| Apariencia idéntica a Windows 11 con tonos grises Fluent UI. | Contraste puro y fondos oscuros profundos. | Efecto translúcido y desenfoque dinámico sobre tu fondo de pantalla. |
 
 ---
 
 ## Características Principales
 
-1. **Sistema de Pestañas Estilo Windows 11 (`Win11TabBarView`)**
-   - Pestañas integradas en la barra superior junto a los botones de ventana de macOS.
-   - Crear pestaña (`Cmd + T`), cerrar (`Cmd + W`), duplicar pestaña, cerrar otras pestañas y arrastrar para reordenar.
-   - Clic derecho sobre cualquier carpeta → **"Abrir en una pestaña nueva"**.
+### 1. Sistema de Pestañas Estilo Windows 11 (`Win11TabBarView`)
+- Pestañas modernas integradas en la barra superior junto a los controles de ventana.
+- Atajos nativos: Crear pestaña (`Cmd + T`), cerrar pestaña (`Cmd + W`), duplicar pestaña y cerrar otras pestañas.
+- Clic derecho sobre cualquier carpeta → **"Abrir en una pestaña nueva"**.
 
-2. **Barra de Comandos (`Win11CommandBarView`)**
-   - Botón **`+ Nuevo`** para crear Carpetas, Documentos de texto (`.txt`), Markdown (`.md`) y JSON (`.json`).
-   - Botones de acción directa: **Cortar (`Cmd + X`)**, **Copiar (`Cmd + C`)**, **Pegar (`Cmd + V`)**, **Cambiar nombre (`F2`)**, **Compartir**, **Eliminar a la Papelera (`Cmd + Delete`)** y **Comprimir a ZIP**.
-   - Menús desplegables de **Ordenar** (Nombre, Fecha de modificación, Tipo, Tamaño; Ascendente/Descendente) y **Ver** (Iconos muy grandes, grandes, medianos, Lista, Detalles, Mostrar archivos ocultos `.dotfiles`, Mostrar extensiones).
-   - Interruptores para el **Panel de vista previa** y el **Panel de detalles**.
+### 2. Barra de Comandos Completa (`Win11CommandBarView`)
+- Botón **`+ Nuevo`** para crear Carpetas, Documentos de texto (`.txt`), Markdown (`.md`) y JSON (`.json`).
+- Botones de acción directa: **Cortar (`Cmd + X`)**, **Copiar (`Cmd + C`)**, **Pegar (`Cmd + V`)**, **Cambiar nombre (`F2`)**, **Compartir**, **Eliminar a la Papelera (`Cmd + Delete`)** y **Comprimir a ZIP**.
+- Menús desplegables:
+  - **Ordenar**: Por Nombre, Fecha de modificación, Tipo y Tamaño (Ascendente / Descendente).
+  - **Ver**: Iconos muy grandes, grandes, medianos, lista compacta, detalles, extensiones de archivo y elementos ocultos (`.dotfiles`).
+- Paneles laterales: Activación rápida del **Panel de vista previa** y del **Panel de detalles**.
 
-3. **Barra de Direcciones y Navegación (`Win11AddressBarView`)**
-   - Botones **Atrás**, **Adelante**, **Historial reciente**, **Subir un nivel** y **Actualizar**.
-   - **Breadcrumbs interactivos** (`Este equipo > Macintosh HD (C:) > Users > ...`) que al hacer clic en el espacio libre o pulsar `Cmd + L` se convierten en una barra de ruta editable (acepta rutas como `~/Desktop`, `/Applications`, `Inicio`, `Este equipo`).
-   - **Buscador instantáneo** en la esquina superior derecha.
+### 3. Barra de Direcciones y Navegación Inteligente (`Win11AddressBarView`)
+- Botones de historial: **Atrás**, **Adelante**, **Historial de carpetas**, **Subir un nivel** y **Actualizar**.
+- **Breadcrumbs interactivos** (`Este equipo > Macintosh HD (C:) > Users > ...`) con clic para desplegar subdirectorios o pulsar `Cmd + L` para editar la ruta directamente.
+- Buscador instantáneo integrado.
 
-4. **Menú Contextual de Clic Derecho de Windows 11 (`Win11ContextMenuOverlay`)**
-   - **Fila superior de iconos de acción rápida**: Cortar, Copiar, Pegar, Cambiar nombre, Compartir y Eliminar.
-   - Opciones contextuales completas: *Abrir*, *Abrir en una pestaña nueva*, *Abrir con...*, *Anclar/Desanclar del Acceso rápido*, *Extraer todo...* (para `.zip`), *Comprimir en archivo ZIP*, *Copiar como ruta de acceso*, *Abrir en Terminal*, *Mostrar en Finder* y *Propiedades*.
+### 4. Integración en la Nube y Almacenamiento
+- Detección automática de **iCloud Drive** y unidades en la nube (**Clarodrive**, OneDrive, etc.).
+- **Despliegue en árbol con chevrons** en la barra lateral para explorar subcarpetas de la nube al instante.
+- **Streaming directo y previsualización de alta velocidad**: Previews instantáneas de fotos y streaming multimedia sin necesidad de descargar gigabytes de archivos previamente.
+- Indicador visual de descarga y liberación de espacio en disco local.
 
-5. **Vistas de Inicio (`Home`) y Este Equipo (`This PC`)**
-   - **Inicio**: Tarjetas de **Acceso rápido** (con chincheta de anclado) y tabla de **Archivos recientes**.
-   - **Este equipo**: Tarjetas de **Dispositivos y unidades** con barras de capacidad ocupada/disponible en GB (en azul o rojo si supera el 90%) y carpetas principales del usuario.
+### 5. Vistas de Inicio (`Home`) y Este Equipo (`This PC`)
+- **Inicio**: Tarjetas de **Acceso rápido** personalizables con chincheta de anclaje y sección de **Archivos recientes** (conmutables entre vista de **iconos grandes con miniaturas** o **tabla de detalles con fecha y ubicación**).
+- **Este equipo**: Unidades de disco y volúmenes montados con barras de estado de capacidad en GB (color azul, o rojo si supera el 90% de ocupación).
 
----
-
-## Cómo Abrir y Ejecutar en tu Mac
-
-### Opción 1: Abrir directamente en Xcode (Recomendado)
-1. Copia la carpeta `ExploradorMac` a tu Mac.
-2. Abre la Terminal en esa carpeta y ejecuta:
-   ```bash
-   xed .
-   ```
-   *(O abre Xcode → **File > Open...** y selecciona la carpeta `ExploradorMac` o el archivo `Package.swift`).*
-3. Selecciona **My Mac** como destino y presiona **`Cmd + R`** para compilar y ejecutar.
-
-### Opción 2: Generar la app `.app` desde Terminal
-Ejecuta el script incluido para compilar en modo Release y empaquetar `WinExplorerMac.app`:
-```bash
-chmod +x build_mac_app.sh
-./build_mac_app.sh
-open "build/WinExplorerMac.app"
-```
+### 6. Explorador Predeterminado del Sistema
+- Capacidad para establecerse como el **gestor de archivos predeterminado** de macOS desde el menú superior.
+- Al descargar una imagen o archivo en navegadores como **Microsoft Edge** o Google Chrome y pulsar *"Mostrar en la carpeta"*, WinExplorerMac se abre automáticamente seleccionando el archivo.
 
 ---
 
-## Atajos de Teclado (Estilo Windows 11 adaptados a Mac)
+## Atajos de Teclado (Windows 11 en Mac)
 
 | Acción | Atajo |
 | :--- | :--- |
 | Nueva pestaña | `Cmd + T` |
 | Cerrar pestaña | `Cmd + W` |
-| Cortar archivos (con icono atenuado al 50%) | `Cmd + X` |
+| Cortar archivos (icono atenuado al 50%) | `Cmd + X` |
 | Copiar archivos | `Cmd + C` |
-| Pegar archivos (copia o mueve según corresponda) | `Cmd + V` |
+| Pegar archivos | `Cmd + V` |
 | Copiar como ruta de acceso | `Cmd + Shift + C` |
 | Cambiar nombre en línea | `F2` |
 | Nueva carpeta | `Cmd + Shift + N` |
 | Eliminar a la Papelera | `Cmd + Delete` |
 | Editar barra de direcciones | `Cmd + L` |
 | Subir un nivel de carpeta | `Cmd + ↑` |
-| Propiedades del archivo/carpeta | `Cmd + I` |
-| Actualizar carpeta | `Cmd + R` |
+| Propiedades del archivo o carpeta | `Cmd + I` |
+| Actualizar vista | `Cmd + R` |
+
+---
+
+## Instalación y Compilación
+
+### Opción 1: Compilar el instalador (.dmg y .app) desde Terminal
+```bash
+chmod +x build_mac_app.sh
+./build_mac_app.sh
+```
+Esto generará:
+- `build/WinExplorerMac.app` (aplicación firmada lista para usar)
+- `build/WinExplorerMac.dmg` (instalador arrastrable a la carpeta Aplicaciones)
+
+### Opción 2: Abrir en Xcode
+1. Abre Xcode y selecciona la carpeta del proyecto o ejecuta:
+   ```bash
+   xed .
+   ```
+2. Selecciona **My Mac** y pulsa **`Cmd + R`** para ejecutar.
