@@ -5,6 +5,7 @@ import AppKit
 public struct WinExplorerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var themeManager = ThemeManager.shared
 
     public init() {
         // Guarantee macOS treats this as a regular desktop GUI application with a Dock icon
@@ -38,6 +39,18 @@ public struct WinExplorerApp: App {
                 }
                 .keyboardShortcut("n", modifiers: [.command])
             }
+            CommandMenu("Tema") {
+                ForEach(ExplorerTheme.allCases) { theme in
+                    Toggle(theme.displayName, isOn: Binding(
+                        get: { themeManager.currentTheme == theme },
+                        set: { _ in
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                themeManager.currentTheme = theme
+                            }
+                        }
+                    ))
+                }
+            }
         }
     }
 
@@ -46,6 +59,14 @@ public struct WinExplorerApp: App {
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
         window.isMovableByWindowBackground = false
+        switch ThemeManager.shared.currentTheme {
+        case .liquidGlass:
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        case .win, .minimalist:
+            window.isOpaque = true
+            window.backgroundColor = .windowBackgroundColor
+        }
         // Keep the window instance alive when closed with the red 'X' button
         // so the app stays in the Dock and reopens the window on Dock click.
         window.isReleasedWhenClosed = false

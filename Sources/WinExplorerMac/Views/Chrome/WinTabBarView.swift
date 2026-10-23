@@ -80,6 +80,7 @@ public struct Win11TabBarView: View {
 
 private struct Win11SingleTabButton: View {
     @ObservedObject var tab: ExplorerTabViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     let isActive: Bool
     let isHovered: Bool
     let onSelect: () -> Void

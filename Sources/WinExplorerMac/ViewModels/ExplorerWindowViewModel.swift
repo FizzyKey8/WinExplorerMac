@@ -44,6 +44,9 @@ public final class ExplorerWindowViewModel: ObservableObject {
         quickAccess.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &serviceCancellables)
+        ThemeManager.shared.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &serviceCancellables)
         refreshVolumes()
     }
 

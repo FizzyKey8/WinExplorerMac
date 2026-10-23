@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct Win11StatusBarView: View {
     @ObservedObject var tab: ExplorerTabViewModel
+    @ObservedObject private var themeManager = ThemeManager.shared
     @Environment(\.colorScheme) private var colorScheme
 
     public init(tab: ExplorerTabViewModel) {
