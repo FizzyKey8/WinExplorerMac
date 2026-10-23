@@ -92,6 +92,14 @@ public struct MainExplorerWindowView: View {
                 currentTab.beginRename()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .win11TriggerOpenShortcut)) { _ in
+            windowVM.openCurrentSelection()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .win11TriggerArrowNavigation)) { notif in
+            if let payload = notif.object as? ArrowNavigationPayload {
+                windowVM.navigateArrows(direction: payload.direction, extendSelection: payload.extendSelection)
+            }
+        }
         .sheet(isPresented: $updateService.isUpdateModalPresented) {
             Win11UpdateModalView(updater: updateService) {
                 updateService.isUpdateModalPresented = false

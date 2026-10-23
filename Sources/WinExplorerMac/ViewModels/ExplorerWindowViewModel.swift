@@ -156,6 +156,226 @@ public final class ExplorerWindowViewModel: ObservableObject {
     }
 
     // MARK: - File Operations on Active Tab
+    public func navigateArrows(direction: ArrowKeyDirection, extendSelection: Bool) {
+        activeContextMenu = nil
+        let tab = activeTab
+        switch tab.destination {
+        case .directory:
+            tab.navigateArrows(direction: direction, extendSelection: extendSelection)
+        case .home:
+            navigateHomeArrows(direction: direction, extendSelection: extendSelection)
+        case .thisPC:
+            var thisPCItems: [FileItem] = []
+            for vol in volumes {
+                if let fi = FileSystemService.shared.makeFileItem(from: vol.url, customDisplayName: vol.name) {
+                    thisPCItems.append(fi)
+                }
+            }
+            for cloud in cloudDrives {
+                if let fi = FileSystemService.shared.makeFileItem(from: cloud.url, customDisplayName: cloud.name) {
+                    thisPCItems.append(fi)
+                }
+            }
+            let driveCols = max(1, Int((max(200, tab.contentWidth - 40) + 14) / (270 + 14)))
+            tab.navigateArrows(direction: direction, extendSelection: extendSelection, itemsOverride: thisPCItems, columns: driveCols)
+        }
+    }
+
+    public func navigateHomeArrows(direction: ArrowKeyDirection, extendSelection: Bool) {
+        let tab = activeTab
+        let pinnedItems: [FileItem] = quickAccess.pinnedFolders.compactMap {
+            FileSystemService.shared.makeFileItem(from: $0.url)
+        }
+        let recentItems: [FileItem] = quickAccess.recentFiles.compactMap {
+            FileSystemService.shared.makeFileItem(from: $0.url)
+        }
+
+        guard !pinnedItems.isEmpty || !recentItems.isEmpty else { return }
+
+        // Determine column count for Pinned folders (220-260px wide + 12 spacing)
+        let availableWidth = max(200, tab.contentWidth - 40)
+        let pinnedCols = max(1, Int((availableWidth + 12) / (220 + 12)))
+
+        // Determine column count for Recent files
+        let recentCols: Int
+        switch tab.viewMode {
+        case .details:
+            recentCols = 1
+        case .list:
+            recentCols = max(1, Int((availableWidth + 8) / (230 + 8)))
+        case .extraLargeIcons, .largeIcons, .mediumIcons:
+            let cellW = tab.viewMode.gridCellWidth
+            recentCols = max(1, Int((availableWidth + 10) / (cellW + 10)))
+        }
+
+        let currentURL = tab.lastClickedURL ?? tab.selectedURLs.first
+        let pinnedIndex = currentURL.flatMap { url in pinnedItems.firstIndex(where: { $0.url == url }) }
+        let recentIndex = currentURL.flatMap { url in recentItems.firstIndex(where: { $0.url == url }) }
+
+        let targetItem: FileItem
+
+        if let pIdx = pinnedIndex {
+            // Inside Pinned Folders
+            switch direction {
+            case .left:
+                if pIdx > 0 {
+                    targetItem = pinnedItems[pIdx - 1]
+                } else {
+                    return
+                }
+            case .right:
+                if pIdx < pinnedItems.count - 1 {
+                    targetItem = pinnedItems[pIdx + 1]
+                } else {
+                    return
+                }
+            case .up:
+                if pIdx - pinnedCols >= 0 {
+                    targetItem = pinnedItems[pIdx - pinnedCols]
+                } else {
+                    return
+                }
+            case .down:
+                if pIdx + pinnedCols < pinnedItems.count {
+                    targetItem = pinnedItems[pIdx + pinnedCols]
+                } else if !recentItems.isEmpty {
+                    let colPos = pIdx % pinnedCols
+                    let targetRecent = min(recentItems.count - 1, colPos)
+                    targetItem = recentItems[targetRecent]
+                } else {
+                    return
+                }
+            }
+        } else if let rIdx = recentIndex {
+            // Inside Recent Files
+            switch direction {
+            case .left:
+                if rIdx > 0 {
+                    targetItem = recentItems[rIdx - 1]
+                } else {
+                    return
+                }
+            case .right:
+                if rIdx < recentItems.count - 1 {
+                    targetItem = recentItems[rIdx + 1]
+                } else {
+                    return
+                }
+            case .down:
+                if recentCols <= 1 {
+                    if rIdx + 1 < recentItems.count {
+                        targetItem = recentItems[rIdx + 1]
+                    } else {
+                        return
+                    }
+                } else {
+                    if rIdx + recentCols < recentItems.count {
+                        targetItem = recentItems[rIdx + recentCols]
+                    } else {
+                        return
+                    }
+                }
+            case .up:
+                if recentCols <= 1 {
+                    if rIdx > 0 {
+                        targetItem = recentItems[rIdx - 1]
+                    } else if !pinnedItems.isEmpty {
+                        let lastRowStart = (pinnedItems.count - 1) / pinnedCols * pinnedCols
+                        targetItem = pinnedItems[min(pinnedItems.count - 1, lastRowStart)]
+                    } else {
+                        return
+                    }
+                } else {
+                    if rIdx - recentCols >= 0 {
+                        targetItem = recentItems[rIdx - recentCols]
+                    } else if !pinnedItems.isEmpty {
+                        let colPos = rIdx % recentCols
+                        let lastRowStart = (pinnedItems.count - 1) / pinnedCols * pinnedCols
+                        let target = min(pinnedItems.count - 1, lastRowStart + (colPos % pinnedCols))
+                        targetItem = pinnedItems[target]
+                    } else {
+                        return
+                    }
+                }
+            }
+        } else {
+            // No selection yet
+            switch direction {
+            case .up, .left:
+                targetItem = recentItems.last ?? pinnedItems.last!
+            case .down, .right:
+                targetItem = pinnedItems.first ?? recentItems.first!
+            }
+        }
+
+        tab.selectedURLs = [targetItem.url]
+        tab.lastClickedURL = targetItem.url
+    }
+
+    public func openCurrentSelection() {
+        activeContextMenu = nil
+        let tab = activeTab
+
+        if tab.renamingURL != nil {
+            tab.commitRenameIfNeeded()
+            return
+        }
+
+        if tab.selectedURLs.isEmpty, let lastURL = tab.lastClickedURL {
+            tab.selectedURLs.insert(lastURL)
+        }
+
+        guard !tab.selectedURLs.isEmpty else { return }
+
+        var itemsToOpen: [FileItem] = []
+        for item in tab.displayedItems where tab.selectedURLs.contains(item.url) {
+            itemsToOpen.append(item)
+        }
+
+        if itemsToOpen.isEmpty {
+            for pinned in quickAccess.pinnedFolders where tab.selectedURLs.contains(pinned.url) {
+                if let fileItem = FileSystemService.shared.makeFileItem(from: pinned.url) {
+                    itemsToOpen.append(fileItem)
+                }
+            }
+            for recent in quickAccess.recentFiles where tab.selectedURLs.contains(recent.url) {
+                if let fileItem = FileSystemService.shared.makeFileItem(from: recent.url) {
+                    itemsToOpen.append(fileItem)
+                }
+            }
+        }
+
+        if itemsToOpen.isEmpty {
+            for vol in volumes where tab.selectedURLs.contains(vol.url) {
+                if let fileItem = FileSystemService.shared.makeFileItem(from: vol.url, customDisplayName: vol.name) {
+                    itemsToOpen.append(fileItem)
+                }
+            }
+            for cloud in cloudDrives where tab.selectedURLs.contains(cloud.url) {
+                if let fileItem = FileSystemService.shared.makeFileItem(from: cloud.url, customDisplayName: cloud.name) {
+                    itemsToOpen.append(fileItem)
+                }
+            }
+        }
+
+        if itemsToOpen.isEmpty {
+            for url in tab.selectedURLs {
+                if let fileItem = FileSystemService.shared.makeFileItem(from: url) {
+                    itemsToOpen.append(fileItem)
+                }
+            }
+        }
+
+        if itemsToOpen.count == 1, let single = itemsToOpen.first, single.isDirectory {
+            openItem(single)
+            return
+        }
+
+        for item in itemsToOpen {
+            openItem(item)
+        }
+    }
+
     public func openItem(_ item: FileItem, inNewTab: Bool = false, withApplication appURL: URL? = nil) {
         activeContextMenu = nil
         if item.isDirectory {

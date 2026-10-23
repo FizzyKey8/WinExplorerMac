@@ -63,6 +63,21 @@ public struct Win11FolderContentView: View {
                 .allowsHitTesting(false)
             }
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        if geo.size.width > 50 {
+                            tab.contentWidth = geo.size.width
+                        }
+                    }
+                    .onChange(of: geo.size.width) { _, newWidth in
+                        if newWidth > 50 {
+                            tab.contentWidth = newWidth
+                        }
+                    }
+            }
+        )
         .background(Win11Theme.contentBackground(colorScheme))
     }
 
@@ -90,18 +105,28 @@ public struct Win11FolderContentView: View {
         let cellWidth = tab.viewMode.gridCellWidth
         let columns = [GridItem(.adaptive(minimum: cellWidth, maximum: cellWidth + 24), spacing: 10)]
 
-        return ScrollView(.vertical) {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                ForEach(tab.displayedItems) { item in
-                    Win11GridItemCell(
-                        windowVM: windowVM,
-                        tab: tab,
-                        item: item,
-                        isCut: clipboard.isItemCut(item.url)
-                    )
+        return ScrollViewReader { scrollProxy in
+            ScrollView(.vertical) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    ForEach(tab.displayedItems) { item in
+                        Win11GridItemCell(
+                            windowVM: windowVM,
+                            tab: tab,
+                            item: item,
+                            isCut: clipboard.isItemCut(item.url)
+                        )
+                        .id(item.url)
+                    }
+                }
+                .padding(16)
+            }
+            .onChange(of: tab.lastClickedURL) { _, targetURL in
+                if let targetURL {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        scrollProxy.scrollTo(targetURL, anchor: nil)
+                    }
                 }
             }
-            .padding(16)
         }
     }
 
@@ -109,18 +134,28 @@ public struct Win11FolderContentView: View {
     private var compactListView: some View {
         let columns = [GridItem(.adaptive(minimum: 230, maximum: 280), spacing: 8)]
 
-        return ScrollView(.vertical) {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
-                ForEach(tab.displayedItems) { item in
-                    Win11ListItemRow(
-                        windowVM: windowVM,
-                        tab: tab,
-                        item: item,
-                        isCut: clipboard.isItemCut(item.url)
-                    )
+        return ScrollViewReader { scrollProxy in
+            ScrollView(.vertical) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
+                    ForEach(tab.displayedItems) { item in
+                        Win11ListItemRow(
+                            windowVM: windowVM,
+                            tab: tab,
+                            item: item,
+                            isCut: clipboard.isItemCut(item.url)
+                        )
+                        .id(item.url)
+                    }
+                }
+                .padding(14)
+            }
+            .onChange(of: tab.lastClickedURL) { _, targetURL in
+                if let targetURL {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        scrollProxy.scrollTo(targetURL, anchor: nil)
+                    }
                 }
             }
-            .padding(14)
         }
     }
 
@@ -149,32 +184,42 @@ public struct Win11FolderContentView: View {
             }
 
             // Rows
-            ScrollView(.vertical) {
-                LazyVStack(spacing: 1) {
-                    ForEach(tab.displayedItems) { item in
-                        Win11DetailsTableRow(
-                            windowVM: windowVM,
-                            tab: tab,
-                            item: item,
-                            isCut: clipboard.isItemCut(item.url)
-                        )
-                    }
-
-                    // Bottom empty area inside scroll view that still responds to right-click on folder background
-                    Win11MouseHandlerView(
-                        onSingleClick: { _ in
-                            windowVM.dismissContextMenu()
-                            tab.clearSelection()
-                        },
-                        onDoubleClick: nil,
-                        onRightClick: { point in
-                            windowVM.presentContextMenu(for: nil, at: point)
+            ScrollViewReader { scrollProxy in
+                ScrollView(.vertical) {
+                    LazyVStack(spacing: 1) {
+                        ForEach(tab.displayedItems) { item in
+                            Win11DetailsTableRow(
+                                windowVM: windowVM,
+                                tab: tab,
+                                item: item,
+                                isCut: clipboard.isItemCut(item.url)
+                            )
+                            .id(item.url)
                         }
-                    )
-                    .frame(minHeight: 120)
+
+                        // Bottom empty area inside scroll view that still responds to right-click on folder background
+                        Win11MouseHandlerView(
+                            onSingleClick: { _ in
+                                windowVM.dismissContextMenu()
+                                tab.clearSelection()
+                            },
+                            onDoubleClick: nil,
+                            onRightClick: { point in
+                                windowVM.presentContextMenu(for: nil, at: point)
+                            }
+                        )
+                        .frame(minHeight: 120)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .onChange(of: tab.lastClickedURL) { _, targetURL in
+                    if let targetURL {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            scrollProxy.scrollTo(targetURL, anchor: nil)
+                        }
+                    }
+                }
             }
         }
     }

@@ -13,6 +13,8 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     @Published public private(set) var isLoading: Bool = false
     @Published public var selectedURLs: Set<URL> = []
     @Published public var lastClickedURL: URL? = nil
+    @Published public var contentWidth: CGFloat = 800
+    private var selectionAnchorURL: URL? = nil
 
     @Published public var searchQuery: String = "" {
         didSet {
@@ -401,7 +403,8 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                 selectedURLs.insert(item.url)
             }
             lastClickedURL = item.url
-        } else if modifiers.contains(.shift), let anchor = lastClickedURL {
+            selectionAnchorURL = item.url
+        } else if modifiers.contains(.shift), let anchor = (selectionAnchorURL ?? lastClickedURL) {
             let currentList = displayedItems.map { $0.url }
             if let startIdx = currentList.firstIndex(of: anchor),
                let endIdx = currentList.firstIndex(of: item.url) {
@@ -410,11 +413,123 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                 selectedURLs = Set(currentList[lower...upper])
             } else {
                 selectedURLs = [item.url]
-                lastClickedURL = item.url
+                selectionAnchorURL = item.url
             }
+            lastClickedURL = item.url
         } else {
             selectedURLs = [item.url]
             lastClickedURL = item.url
+            selectionAnchorURL = item.url
+        }
+    }
+
+    public var currentColumns: Int {
+        switch viewMode {
+        case .details:
+            return 1
+        case .list:
+            let available = max(200, contentWidth - 28)
+            return max(1, Int((available + 8) / (230 + 8)))
+        case .extraLargeIcons, .largeIcons, .mediumIcons:
+            let cellWidth = viewMode.gridCellWidth
+            let available = max(200, contentWidth - 32)
+            return max(1, Int((available + 10) / (cellWidth + 10)))
+        }
+    }
+
+    public func navigateArrows(
+        direction: ArrowKeyDirection,
+        extendSelection: Bool = false,
+        itemsOverride: [FileItem]? = nil,
+        columns: Int? = nil
+    ) {
+        commitRenameIfNeeded()
+        let list = itemsOverride ?? displayedItems
+        guard !list.isEmpty else { return }
+
+        let cols = max(1, columns ?? currentColumns)
+
+        // Find current index
+        let currentIndex: Int
+        if let lastURL = lastClickedURL, let found = list.firstIndex(where: { $0.url == lastURL }) {
+            currentIndex = found
+        } else if let firstSelected = selectedURLs.first, let found = list.firstIndex(where: { $0.url == firstSelected }) {
+            currentIndex = found
+        } else {
+            currentIndex = -1
+        }
+
+        let targetIndex: Int
+        if currentIndex == -1 {
+            switch direction {
+            case .up, .left:
+                targetIndex = list.count - 1
+            case .down, .right:
+                targetIndex = 0
+            }
+        } else {
+            switch direction {
+            case .left:
+                if currentIndex > 0 {
+                    targetIndex = currentIndex - 1
+                } else {
+                    return
+                }
+            case .right:
+                if currentIndex < list.count - 1 {
+                    targetIndex = currentIndex + 1
+                } else {
+                    return
+                }
+            case .up:
+                if cols <= 1 {
+                    if currentIndex > 0 {
+                        targetIndex = currentIndex - 1
+                    } else {
+                        return
+                    }
+                } else {
+                    if currentIndex - cols >= 0 {
+                        targetIndex = currentIndex - cols
+                    } else {
+                        return
+                    }
+                }
+            case .down:
+                if cols <= 1 {
+                    if currentIndex + 1 < list.count {
+                        targetIndex = currentIndex + 1
+                    } else {
+                        return
+                    }
+                } else {
+                    if currentIndex + cols < list.count {
+                        targetIndex = currentIndex + cols
+                    } else {
+                        return
+                    }
+                }
+            }
+        }
+
+        guard targetIndex >= 0 && targetIndex < list.count else { return }
+        let targetItem = list[targetIndex]
+
+        if extendSelection {
+            let anchorURL = selectionAnchorURL ?? (currentIndex >= 0 && currentIndex < list.count ? list[currentIndex].url : targetItem.url)
+            selectionAnchorURL = anchorURL
+            if let startIdx = list.firstIndex(where: { $0.url == anchorURL }) {
+                let lower = min(startIdx, targetIndex)
+                let upper = max(startIdx, targetIndex)
+                selectedURLs = Set(list[lower...upper].map { $0.url })
+            } else {
+                selectedURLs = [targetItem.url]
+            }
+            lastClickedURL = targetItem.url
+        } else {
+            selectedURLs = [targetItem.url]
+            lastClickedURL = targetItem.url
+            selectionAnchorURL = targetItem.url
         }
     }
 
@@ -425,6 +540,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     public func clearSelection() {
         commitRenameIfNeeded()
         selectedURLs.removeAll()
+        selectionAnchorURL = nil
     }
 
     // MARK: - Inline Rename

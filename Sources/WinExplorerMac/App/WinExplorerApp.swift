@@ -139,11 +139,66 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Listen for F2 key (keyCode 120) to trigger inline rename just like Windows 11
+        // Listen for keyboard navigation & shortcuts: F2 (rename), Enter (open), Arrow keys (navigate)
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 120 { // F2 key on macOS
+            // F2 key on macOS for inline rename
+            if event.keyCode == 120 {
                 NotificationCenter.default.post(name: .win11TriggerRenameShortcut, object: nil)
+                return nil
             }
+
+            // Check if the user is typing in a text field (Search, Address Bar, Rename, etc.)
+            let isEditingText: Bool = {
+                guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+                return responder is NSTextView || responder is NSTextField || responder is NSText
+            }()
+
+            if isEditingText {
+                return event
+            }
+
+            // Don't intercept if a modal sheet is presented
+            if NSApp.keyWindow?.attachedSheet != nil {
+                return event
+            }
+
+            // Return (36) or Keypad Enter (76) -> Open selected file / folder
+            if event.keyCode == 36 || event.keyCode == 76 {
+                NotificationCenter.default.post(name: .win11TriggerOpenShortcut, object: nil)
+                return nil
+            }
+
+            // Arrow keys navigation
+            let extendSelection = event.modifierFlags.contains(.shift)
+            switch event.keyCode {
+            case 123: // Left
+                NotificationCenter.default.post(
+                    name: .win11TriggerArrowNavigation,
+                    object: ArrowNavigationPayload(direction: .left, extendSelection: extendSelection)
+                )
+                return nil
+            case 124: // Right
+                NotificationCenter.default.post(
+                    name: .win11TriggerArrowNavigation,
+                    object: ArrowNavigationPayload(direction: .right, extendSelection: extendSelection)
+                )
+                return nil
+            case 125: // Down
+                NotificationCenter.default.post(
+                    name: .win11TriggerArrowNavigation,
+                    object: ArrowNavigationPayload(direction: .down, extendSelection: extendSelection)
+                )
+                return nil
+            case 126: // Up
+                NotificationCenter.default.post(
+                    name: .win11TriggerArrowNavigation,
+                    object: ArrowNavigationPayload(direction: .up, extendSelection: extendSelection)
+                )
+                return nil
+            default:
+                break
+            }
+
             return event
         }
     }
@@ -271,4 +326,6 @@ public extension Notification.Name {
     static let win11TriggerRenameShortcut = Notification.Name("win11TriggerRenameShortcut")
     static let win11ReopenMainWindow = Notification.Name("win11ReopenMainWindow")
     static let win11NavigateToURL = Notification.Name("win11NavigateToURL")
+    static let win11TriggerOpenShortcut = Notification.Name("win11TriggerOpenShortcut")
+    static let win11TriggerArrowNavigation = Notification.Name("win11TriggerArrowNavigation")
 }

@@ -140,3 +140,22 @@ public enum NewItemTemplate: String, CaseIterable, Identifiable {
         }
     }
 }
+
+public enum ArrowKeyDirection: Sendable {
+    case up
+    case down
+    case left
+    case right
+}
+
+public struct ArrowNavigationPayload: Sendable {
+    public let direction: ArrowKeyDirection
+    public let extendSelection: Bool
+
+    public init(direction: ArrowKeyDirection, extendSelection: Bool) {
+        self.direction = direction
+        self.extendSelection = extendSelection
+    }
+}
+
+
