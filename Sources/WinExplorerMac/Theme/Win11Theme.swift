@@ -216,15 +216,29 @@ public struct Win11ItemIconView: View {
                     )
                     .shadow(color: Color.black.opacity(0.20), radius: max(1, size * 0.04), x: 0, y: 1)
             } else {
-                Image(nsImage: item.systemIcon)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: size, height: size)
+                ZStack(alignment: .bottomTrailing) {
+                    Image(nsImage: item.systemIcon)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: size, height: size)
+
+                    if item.isCloudDataless && size >= 18 {
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(.system(size: max(8, size * 0.28), weight: .semibold))
+                            .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                            .padding(max(1.5, size * 0.04))
+                            .background(
+                                Circle()
+                                    .fill(Color(nsColor: .windowBackgroundColor))
+                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
+                            )
+                    }
+                }
             }
         }
         .task(id: "\(item.url.path)|\(Int(size))") {
-            guard item.isImage || item.isQuickLookThumbnailSupported else { return }
+            guard !item.isCloudDataless, item.isImage || item.isQuickLookThumbnailSupported else { return }
             if let cached = ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size) {
                 thumbnail = cached
                 return

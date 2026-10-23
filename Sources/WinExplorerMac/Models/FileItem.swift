@@ -16,6 +16,7 @@ public struct FileItem: Identifiable, Hashable {
     public let lastAccessDate: Date?
     public let fileTypeDescription: String
     public let posixPermissions: Int
+    public let isCloudDataless: Bool
 
     public init(
         url: URL,
@@ -28,7 +29,8 @@ public struct FileItem: Identifiable, Hashable {
         modificationDate: Date? = nil,
         lastAccessDate: Date? = nil,
         fileTypeDescription: String? = nil,
-        posixPermissions: Int = 0o755
+        posixPermissions: Int = 0o755,
+        isCloudDataless: Bool = false
     ) {
         self.id = url.standardizedFileURL
         self.url = url.standardizedFileURL
@@ -51,6 +53,7 @@ public struct FileItem: Identifiable, Hashable {
             self.fileTypeDescription = "Archivo"
         }
         self.posixPermissions = posixPermissions
+        self.isCloudDataless = isCloudDataless
     }
 
     public func displayName(showExtensions: Bool) -> String {
@@ -116,8 +119,24 @@ public struct FileItem: Identifiable, Hashable {
         ].contains(fileExtension)
     }
 
+    private static let iconCache = NSCache<NSString, NSImage>()
+
     public var systemIcon: NSImage {
-        NSWorkspace.shared.icon(forFile: url.path)
+        if fileExtension == "app" && !isCloudDataless {
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }
+        let key = (fileExtension.isEmpty ? "__generic_data__" : fileExtension) as NSString
+        if let cached = Self.iconCache.object(forKey: key) {
+            return cached
+        }
+        let icon: NSImage
+        if !fileExtension.isEmpty, let utType = UTType(filenameExtension: fileExtension) {
+            icon = NSWorkspace.shared.icon(for: utType)
+        } else {
+            icon = NSWorkspace.shared.icon(for: .data)
+        }
+        Self.iconCache.setObject(icon, forKey: key)
+        return icon
     }
 
     public var parentPath: String {

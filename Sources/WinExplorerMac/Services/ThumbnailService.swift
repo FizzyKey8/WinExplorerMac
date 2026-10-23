@@ -24,6 +24,11 @@ public final class ThumbnailService {
     }
 
     public func loadThumbnail(for item: FileItem, targetSize: CGFloat, completion: @escaping (NSImage?) -> Void) {
+        // Never force-download virtual cloud-only (dataless) files just to generate a thumbnail
+        if item.isCloudDataless {
+            completion(nil)
+            return
+        }
         let key = cacheKey(for: item, targetSize: targetSize)
         if let cached = cache.object(forKey: key) {
             completion(cached)

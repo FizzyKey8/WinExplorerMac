@@ -11,9 +11,15 @@ public struct Win11StatusBarView: View {
     public var body: some View {
         HStack(spacing: 14) {
             if case .directory = tab.destination {
-                Text("\(tab.displayedItems.count) elementos")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    if tab.isLoading {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
+                    Text(tab.isLoading ? "\(tab.displayedItems.count) elementos (cargando...)" : "\(tab.displayedItems.count) elementos")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                }
 
                 if !tab.selectedURLs.isEmpty {
                     Rectangle()

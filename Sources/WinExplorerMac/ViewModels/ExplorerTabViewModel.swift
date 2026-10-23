@@ -9,13 +9,33 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     @Published public private(set) var forwardStack: [NavigationDestination] = []
 
     @Published public private(set) var items: [FileItem] = []
+    @Published public private(set) var displayedItems: [FileItem] = []
+    @Published public private(set) var isLoading: Bool = false
     @Published public var selectedURLs: Set<URL> = []
     @Published public var lastClickedURL: URL? = nil
 
-    @Published public var searchQuery: String = ""
+    @Published public var searchQuery: String = "" {
+        didSet {
+            if oldValue != searchQuery {
+                scheduleDisplayedItemsRefresh()
+            }
+        }
+    }
     @Published public var viewMode: ExplorerViewMode = .details
-    @Published public var sortField: ExplorerSortField = .name
-    @Published public var sortAscending: Bool = true
+    @Published public var sortField: ExplorerSortField = .name {
+        didSet {
+            if oldValue != sortField {
+                scheduleDisplayedItemsRefresh()
+            }
+        }
+    }
+    @Published public var sortAscending: Bool = true {
+        didSet {
+            if oldValue != sortAscending {
+                scheduleDisplayedItemsRefresh()
+            }
+        }
+    }
     @Published public var showHiddenFiles: Bool = false
     @Published public var showFileExtensions: Bool = true
 
@@ -27,6 +47,9 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
 
     private var directoryMonitorSource: DispatchSourceFileSystemObject?
     private var directoryFileDescriptor: Int32 = -1
+    private var loadTask: Task<Void, Never>?
+    private var filterSortTask: Task<Void, Never>?
+    private var monitorDebounceWorkItem: DispatchWorkItem?
 
     public init(
         id: UUID = UUID(),
@@ -44,6 +67,9 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     }
 
     deinit {
+        loadTask?.cancel()
+        filterSortTask?.cancel()
+        monitorDebounceWorkItem?.cancel()
         stopDirectoryMonitor()
     }
 
@@ -78,7 +104,12 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         }
     }
 
-    public var displayedItems: [FileItem] {
+    public static func filterAndSort(
+        items: [FileItem],
+        searchQuery: String,
+        sortField: ExplorerSortField,
+        sortAscending: Bool
+    ) -> [FileItem] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let filtered: [FileItem]
         if query.isEmpty {
@@ -90,6 +121,8 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             }
         }
 
+        let useFastCompare = filtered.count > 2500
+
         return filtered.sorted { lhs, rhs in
             // Folders always grouped first like Windows 11 Explorer
             if lhs.isDirectory != rhs.isDirectory {
@@ -99,20 +132,28 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             let comparison: ComparisonResult
             switch sortField {
             case .name:
-                comparison = lhs.name.localizedStandardCompare(rhs.name)
+                comparison = useFastCompare
+                    ? lhs.name.caseInsensitiveCompare(rhs.name)
+                    : lhs.name.localizedStandardCompare(rhs.name)
             case .dateModified:
                 let lDate = lhs.modificationDate ?? .distantPast
                 let rDate = rhs.modificationDate ?? .distantPast
                 if lDate == rDate {
-                    comparison = lhs.name.localizedStandardCompare(rhs.name)
+                    comparison = useFastCompare
+                        ? lhs.name.caseInsensitiveCompare(rhs.name)
+                        : lhs.name.localizedStandardCompare(rhs.name)
                 } else {
                     comparison = lDate < rDate ? .orderedAscending : .orderedDescending
                 }
             case .type:
-                comparison = lhs.fileTypeDescription.localizedStandardCompare(rhs.fileTypeDescription)
+                comparison = useFastCompare
+                    ? lhs.fileTypeDescription.caseInsensitiveCompare(rhs.fileTypeDescription)
+                    : lhs.fileTypeDescription.localizedStandardCompare(rhs.fileTypeDescription)
             case .size:
                 if lhs.size == rhs.size {
-                    comparison = lhs.name.localizedStandardCompare(rhs.name)
+                    comparison = useFastCompare
+                        ? lhs.name.caseInsensitiveCompare(rhs.name)
+                        : lhs.name.localizedStandardCompare(rhs.name)
                 } else {
                     comparison = lhs.size < rhs.size ? .orderedAscending : .orderedDescending
                 }
@@ -122,6 +163,38 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                 return comparison == .orderedAscending
             } else {
                 return comparison == .orderedDescending
+            }
+        }
+    }
+
+    private func scheduleDisplayedItemsRefresh() {
+        filterSortTask?.cancel()
+        let currentItems = self.items
+        let query = self.searchQuery
+        let field = self.sortField
+        let ascending = self.sortAscending
+
+        if currentItems.count <= 400 {
+            self.displayedItems = Self.filterAndSort(
+                items: currentItems,
+                searchQuery: query,
+                sortField: field,
+                sortAscending: ascending
+            )
+            return
+        }
+
+        filterSortTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let sorted = Self.filterAndSort(
+                items: currentItems,
+                searchQuery: query,
+                sortField: field,
+                sortAscending: ascending
+            )
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self = self, !Task.isCancelled else { return }
+                self.displayedItems = sorted
             }
         }
     }
@@ -249,6 +322,10 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
 
         let expanded = (trimmed as NSString).expandingTildeInPath
         let targetURL = URL(fileURLWithPath: expanded).standardizedFileURL
+        if FileSystemService.isCloudPath(targetURL.path) && targetURL.pathExtension.isEmpty {
+            navigate(to: .directory(targetURL))
+            return
+        }
         var isDir: ObjCBool = false
         if FileManager.default.fileExists(atPath: targetURL.path, isDirectory: &isDir) {
             if isDir.boolValue {
@@ -380,48 +457,129 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     }
 
     // MARK: - Directory Loading & Live FileSystem Monitoring
-    private func loadCurrentDestination() {
+    private func loadCurrentDestination(clearExisting: Bool = true) {
+        loadTask?.cancel()
+        filterSortTask?.cancel()
+        monitorDebounceWorkItem?.cancel()
         stopDirectoryMonitor()
+
         switch destination {
         case .home, .thisPC:
+            isLoading = false
             items = []
+            displayedItems = []
         case .directory(let url):
-            do {
-                items = try FileSystemService.shared.contentsOfDirectory(
-                    at: url,
-                    includeHidden: showHiddenFiles
-                )
-                startDirectoryMonitor(for: url)
-            } catch {
+            if clearExisting {
                 items = []
-                errorMessage = "No se pudo abrir la carpeta '\(url.lastPathComponent)': \(error.localizedDescription)"
+                displayedItems = []
+            }
+            isLoading = true
+
+            let includeHidden = showHiddenFiles
+            let initialQuery = searchQuery
+            let initialSortField = sortField
+            let initialSortAscending = sortAscending
+
+            loadTask = Task.detached(priority: .userInitiated) { [weak self] in
+                var accumulated: [FileItem] = []
+                accumulated.reserveCapacity(256)
+                var isFirstBatch = true
+                var lastPublishTime = CFAbsoluteTimeGetCurrent()
+
+                do {
+                    try FileSystemService.shared.streamContentsOfDirectory(
+                        at: url,
+                        includeHidden: includeHidden,
+                        firstBatchSize: 150,
+                        subsequentBatchSize: 500
+                    ) { batch, isComplete in
+                        if Task.isCancelled { return false }
+                        accumulated.append(contentsOf: batch)
+
+                        let now = CFAbsoluteTimeGetCurrent()
+                        let shouldPublishNow = isFirstBatch || isComplete || (now - lastPublishTime >= 0.14)
+
+                        if shouldPublishNow {
+                            isFirstBatch = false
+                            lastPublishTime = now
+                            let snapshot = accumulated
+                            let sortedSnapshot: [FileItem]
+                            if isComplete || snapshot.count <= 800 {
+                                sortedSnapshot = Self.filterAndSort(
+                                    items: snapshot,
+                                    searchQuery: initialQuery,
+                                    sortField: initialSortField,
+                                    sortAscending: initialSortAscending
+                                )
+                            } else {
+                                sortedSnapshot = snapshot
+                            }
+
+                            DispatchQueue.main.async { [weak self] in
+                                guard let self = self,
+                                      case .directory(let currentURL) = self.destination,
+                                      currentURL.standardizedFileURL == url.standardizedFileURL else { return }
+                                self.items = snapshot
+                                if isComplete || snapshot.count <= 800 {
+                                    // If user changed sort/search while loading, re-evaluate with latest parameters
+                                    if self.searchQuery == initialQuery &&
+                                       self.sortField == initialSortField &&
+                                       self.sortAscending == initialSortAscending {
+                                        self.displayedItems = sortedSnapshot
+                                    } else {
+                                        self.scheduleDisplayedItemsRefresh()
+                                    }
+                                } else {
+                                    self.displayedItems = sortedSnapshot
+                                }
+                                if isComplete {
+                                    self.isLoading = false
+                                    self.startDirectoryMonitor(for: url)
+                                }
+                            }
+                        }
+                        return !Task.isCancelled
+                    }
+                } catch {
+                    if Task.isCancelled { return }
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self,
+                              case .directory(let currentURL) = self.destination,
+                              currentURL.standardizedFileURL == url.standardizedFileURL else { return }
+                        self.isLoading = false
+                        self.items = []
+                        self.displayedItems = []
+                        self.errorMessage = "No se pudo abrir la carpeta '\(url.lastPathComponent)': \(error.localizedDescription)"
+                    }
+                }
             }
         }
     }
 
     private func startDirectoryMonitor(for url: URL) {
+        guard !FileSystemService.isCloudPath(url.path) else { return }
         let fd = open(url.path, O_EVTONLY)
         guard fd >= 0 else { return }
         directoryFileDescriptor = fd
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
-            eventMask: [.write, .rename, .delete, .attrib],
+            eventMask: [.write, .rename, .delete],
             queue: DispatchQueue.main
         )
 
         source.setEventHandler { [weak self] in
             guard let self = self else { return }
-            if self.renamingURL == nil {
-                if case .directory(let currentURL) = self.destination {
-                    if let updated = try? FileSystemService.shared.contentsOfDirectory(
-                        at: currentURL,
-                        includeHidden: self.showHiddenFiles
-                    ) {
-                        self.items = updated
-                    }
+            guard self.renamingURL == nil, !self.isLoading else { return }
+            self.monitorDebounceWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self = self, self.renamingURL == nil else { return }
+                if case .directory = self.destination {
+                    self.loadCurrentDestination(clearExisting: false)
                 }
             }
+            self.monitorDebounceWorkItem = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: work)
         }
 
         source.setCancelHandler {
@@ -433,6 +591,8 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     }
 
     private func stopDirectoryMonitor() {
+        monitorDebounceWorkItem?.cancel()
+        monitorDebounceWorkItem = nil
         directoryMonitorSource?.cancel()
         directoryMonitorSource = nil
         directoryFileDescriptor = -1

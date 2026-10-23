@@ -42,17 +42,46 @@ public struct Win11FolderContentView: View {
                 }
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if tab.isLoading && !tab.displayedItems.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Cargando archivos (\(tab.items.count))...")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(Win11Theme.subtleBorder(colorScheme), lineWidth: 1)
+                )
+                .padding(.top, 10)
+                .padding(.trailing, 14)
+                .allowsHitTesting(false)
+            }
+        }
         .background(Win11Theme.contentBackground(colorScheme))
     }
 
     // MARK: - Empty Folder View
     private var emptyFolderState: some View {
-        VStack(spacing: 10) {
-            Win11FolderIconView(size: 56)
-                .opacity(0.75)
-            Text(tab.searchQuery.isEmpty ? "Esta carpeta está vacía." : "Ningún elemento coincide con tu búsqueda.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+        VStack(spacing: 12) {
+            if tab.isLoading {
+                ProgressView()
+                    .controlSize(.regular)
+                Text("Cargando elementos de la carpeta...")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+            } else {
+                Win11FolderIconView(size: 56)
+                    .opacity(0.75)
+                Text(tab.searchQuery.isEmpty ? "Esta carpeta está vacía." : "Ningún elemento coincide con tu búsqueda.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
