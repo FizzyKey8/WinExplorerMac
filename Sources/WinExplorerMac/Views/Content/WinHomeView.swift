@@ -120,18 +120,17 @@ public struct Win11HomeView: View {
                                     let gridCols = [GridItem(.adaptive(minimum: cellWidth, maximum: cellWidth + 24), spacing: 10)]
                                     LazyVGrid(columns: gridCols, alignment: .leading, spacing: 12) {
                                         ForEach(quickAccess.recentFiles) { record in
-                                            if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
-                                                Win11GridItemCell(
-                                                    windowVM: windowVM,
-                                                    tab: tab,
-                                                    item: fileItem,
-                                                    isCut: windowVM.clipboard.isItemCut(fileItem.url),
-                                                    onDragChanged: handleDragChanged,
-                                                    onDragEnded: handleDragEnded
-                                                )
-                                                .id(fileItem.url)
-                                                .zIndex(tab.renamingURL == fileItem.url ? 999 : 0)
-                                            }
+                                            let fileItem = FileSystemService.shared.makeFileItem(from: record)
+                                            Win11GridItemCell(
+                                                windowVM: windowVM,
+                                                tab: tab,
+                                                item: fileItem,
+                                                isCut: windowVM.clipboard.isItemCut(fileItem.url),
+                                                onDragChanged: handleDragChanged,
+                                                onDragEnded: handleDragEnded
+                                            )
+                                            .id(fileItem.url)
+                                            .zIndex(tab.renamingURL == fileItem.url ? 999 : 0)
                                         }
                                     }
                                     .padding(.top, 8)
@@ -140,18 +139,17 @@ public struct Win11HomeView: View {
                                     let listCols = [GridItem(.adaptive(minimum: 230, maximum: 280), spacing: 8)]
                                     LazyVGrid(columns: listCols, alignment: .leading, spacing: 4) {
                                         ForEach(quickAccess.recentFiles) { record in
-                                            if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
-                                                Win11ListItemRow(
-                                                    windowVM: windowVM,
-                                                    tab: tab,
-                                                    item: fileItem,
-                                                    isCut: windowVM.clipboard.isItemCut(fileItem.url),
-                                                    onDragChanged: handleDragChanged,
-                                                    onDragEnded: handleDragEnded
-                                                )
-                                                .id(fileItem.url)
-                                                .zIndex(tab.renamingURL == fileItem.url ? 999 : 0)
-                                            }
+                                            let fileItem = FileSystemService.shared.makeFileItem(from: record)
+                                            Win11ListItemRow(
+                                                windowVM: windowVM,
+                                                tab: tab,
+                                                item: fileItem,
+                                                isCut: windowVM.clipboard.isItemCut(fileItem.url),
+                                                onDragChanged: handleDragChanged,
+                                                onDragEnded: handleDragEnded
+                                            )
+                                            .id(fileItem.url)
+                                            .zIndex(tab.renamingURL == fileItem.url ? 999 : 0)
                                         }
                                     }
                                     .padding(.top, 8)
@@ -174,11 +172,10 @@ public struct Win11HomeView: View {
                                         Divider()
 
                                         ForEach(quickAccess.recentFiles) { record in
-                                            if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
-                                                recentFileRow(item: fileItem, accessedAt: record.accessedAt)
-                                                    .id(fileItem.url)
-                                                    .zIndex(tab.renamingURL == fileItem.url ? 999 : 0)
-                                            }
+                                            let fileItem = FileSystemService.shared.makeFileItem(from: record)
+                                            recentFileRow(item: fileItem, accessedAt: record.accessedAt)
+                                                .id(fileItem.url)
+                                                .zIndex(tab.renamingURL == fileItem.url ? 999 : 0)
                                         }
                                     }
                                     .padding(.top, 8)

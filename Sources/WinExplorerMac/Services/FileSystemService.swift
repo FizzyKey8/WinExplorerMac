@@ -1082,37 +1082,90 @@ public final class FileSystemService {
                 posixPermissions: 0o700
             )
         }
+        // Fast path for CloudStorage to avoid blocking kernel VFS calls on the main thread
         if Self.isCloudPath(stdURL.path) || claroDriveServerUrl(for: stdURL) != nil {
             let isDir = stdURL.hasDirectoryPath || stdURL.pathExtension.isEmpty
-            return FileItem(
+            let fileName = customDisplayName ?? stdURL.lastPathComponent
+            let hashK = String(abs(stdURL.path.hashValue))
+            let isDownloaded = CloudDownloadManager.shared.isDownloaded(key: hashK)
+
+            var item = FileItem(
                 url: stdURL,
-                name: customDisplayName ?? stdURL.lastPathComponent,
+                name: fileName,
                 isDirectory: isDir,
-                isHidden: stdURL.lastPathComponent.hasPrefix("."),
+                isHidden: fileName.hasPrefix("."),
                 isSymlink: false,
                 size: 0,
                 creationDate: nil,
                 modificationDate: nil,
                 lastAccessDate: nil,
-                fileTypeDescription: fastTypeDescription(forName: stdURL.lastPathComponent, isDirectory: isDir),
+                fileTypeDescription: fastTypeDescription(forName: fileName, isDirectory: isDir),
                 posixPermissions: 0o755,
-                isCloudDataless: !isDir
+                isCloudDataless: !isDir && !isDownloaded,
+                cloudFileId: nil
             )
+            if let cached = CloudDownloadManager.shared.localCachedURL(for: item) {
+                item.isCloudDataless = false
+                CloudDownloadManager.shared.finishDownload(for: item)
+                if let attr = try? FileManager.default.attributesOfItem(atPath: cached.path),
+                   let cachedSize = attr[.size] as? NSNumber {
+                    item.size = cachedSize.int64Value
+                }
+            }
+            return item
         }
+
         let parentURL = stdURL.deletingLastPathComponent().cleanFileURL
         let parentPath = parentURL.path
         let entryName = stdURL.lastPathComponent
+
         if let fastItem = makeFileItemFromStat(
             parentURL: parentURL,
             parentPath: parentPath,
             entryName: entryName,
             dType: UInt8(DT_UNKNOWN),
-            isCloudDirectory: Self.isCloudPath(stdURL.path),
+            isCloudDirectory: false,
             customDisplayName: customDisplayName
         ) {
             return fastItem
         }
+
         return nil
+    }
+
+    public func makeFileItem(from record: RecentFileRecord) -> FileItem {
+        let stdURL = record.url.cleanFileURL
+        let fileName = record.name ?? stdURL.lastPathComponent
+        let isCloud = Self.isCloudPath(stdURL.path) || claroDriveServerUrl(for: stdURL) != nil
+
+        let hashK = String(abs(stdURL.path.hashValue))
+        let isDownloaded = CloudDownloadManager.shared.isDownloaded(key: record.cloudFileId ?? hashK)
+
+        var item = FileItem(
+            url: stdURL,
+            name: fileName,
+            isDirectory: false,
+            isHidden: fileName.hasPrefix("."),
+            isSymlink: false,
+            size: record.size,
+            creationDate: record.accessedAt,
+            modificationDate: record.accessedAt,
+            lastAccessDate: record.accessedAt,
+            fileTypeDescription: fastTypeDescription(forName: fileName, isDirectory: false),
+            posixPermissions: 0o755,
+            isCloudDataless: isCloud && !isDownloaded && record.isCloudDataless,
+            cloudFileId: record.cloudFileId
+        )
+
+        if let cached = CloudDownloadManager.shared.localCachedURL(for: item) {
+            item.isCloudDataless = false
+            CloudDownloadManager.shared.finishDownload(for: item)
+            if let attr = try? FileManager.default.attributesOfItem(atPath: cached.path),
+               let cachedSize = attr[.size] as? NSNumber {
+                item.size = cachedSize.int64Value
+            }
+        }
+        return item
     }
 
     // MARK: - Mounted Volumes (This PC / Este equipo)
@@ -1250,9 +1303,24 @@ public final class FileSystemService {
         onStatus: ((String?) -> Void)? = nil,
         onError: ((String?) -> Void)? = nil
     ) {
-        // Claro drive and dataless items must ALWAYS route through openClaroDriveItem (using /tmp sandbox destination)
-        // so that macOS Preview never tries to scan or stat the parent CloudStorage directory containing thousands of files!
-        if claroDriveServerUrl(for: item.url) != nil || item.isCloudDataless {
+        // 1. If already locally cached in /tmp/WinExplorerMac_CloudOpened: open immediately (< 1ms)!
+        if let cachedURL = CloudDownloadManager.shared.localCachedURL(for: item) {
+            CloudDownloadManager.shared.finishDownload(for: item)
+            onStatus?(nil)
+            openLocalURL(cachedURL, withApplication: appURL)
+            return
+        }
+
+        // 2. If locally present on disk with allocated blocks: open directly!
+        if isFileLocallyPresent(item.url) {
+            CloudDownloadManager.shared.finishDownload(for: item)
+            onStatus?(nil)
+            openLocalURL(item.url, withApplication: appURL)
+            return
+        }
+
+        // 3. Claro drive virtual dataless item:
+        if claroDriveServerUrl(for: item.url) != nil || item.cloudFileId != nil {
             openClaroDriveItem(item, withApplication: appURL, onStatus: onStatus, onError: onError)
             return
         }
@@ -1260,8 +1328,7 @@ public final class FileSystemService {
         openLocalURL(item.url, withApplication: appURL)
     }
 
-    private func isFileLocallyPresent(_ url: URL) -> Bool {
-        guard !Self.isCloudPath(url.path) else { return false }
+    public func isFileLocallyPresent(_ url: URL) -> Bool {
         var st = Darwin.stat()
         guard lstat(url.path, &st) == 0 else { return false }
         let isDataless = (st.st_flags & 0x40000000) != 0 || (st.st_blocks == 0 && st.st_size > 0)
@@ -1309,7 +1376,13 @@ public final class FileSystemService {
         try? fileManager.createDirectory(at: itemCacheDir, withIntermediateDirectories: true)
         let destURL = itemCacheDir.appendingPathComponent(item.name, isDirectory: false)
 
-        // 1. Instant open (< 1ms) if already in /tmp/WinExplorerMac_CloudOpened/<folderKey>/<name>
+        // 1. Instant open (< 1ms) if already in /tmp/WinExplorerMac_CloudOpened
+        if let cached = CloudDownloadManager.shared.localCachedURL(for: item) {
+            CloudDownloadManager.shared.finishDownload(for: item)
+            onStatus?(nil)
+            openLocalURL(cached, withApplication: appURL)
+            return
+        }
         if fileManager.fileExists(atPath: destURL.path) {
             CloudDownloadManager.shared.finishDownload(for: item)
             onStatus?(nil)
@@ -1318,19 +1391,17 @@ public final class FileSystemService {
         }
 
         // 2. Instant open (~20ms) if high-res preview /tmp/WinExplorerMac_CloudPreviews/<fileId>.img is already on disk
+        let previewFid = (item.cloudFileId?.isEmpty == false) ? item.cloudFileId! : String(abs(item.url.path.hashValue))
+        let previewDiskFile = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews/\(previewFid).img", isDirectory: false)
         if item.isImage,
            item.fileExtension != "gif",
-           let fileId = item.cloudFileId,
-           !fileId.isEmpty {
-            let previewDiskFile = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews/\(fileId).img", isDirectory: false)
-            if fileManager.fileExists(atPath: previewDiskFile.path),
-               let previewData = try? Data(contentsOf: previewDiskFile),
-               Self.writeConvertedImageData(previewData, to: destURL, fileExtension: item.fileExtension) {
-                CloudDownloadManager.shared.finishDownload(for: item)
-                onStatus?(nil)
-                openLocalURL(destURL, withApplication: appURL)
-                return
-            }
+           fileManager.fileExists(atPath: previewDiskFile.path),
+           let previewData = try? Data(contentsOf: previewDiskFile),
+           Self.writeConvertedImageData(previewData, to: destURL, fileExtension: item.fileExtension) {
+            CloudDownloadManager.shared.finishDownload(for: item)
+            onStatus?(nil)
+            openLocalURL(destURL, withApplication: appURL)
+            return
         }
 
         // 3. Download asynchronously via dedicated session (never touching FileProvider VFS)

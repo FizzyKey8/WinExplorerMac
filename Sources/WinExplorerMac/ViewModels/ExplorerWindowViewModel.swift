@@ -387,7 +387,7 @@ public final class ExplorerWindowViewModel: ObservableObject {
         } else {
             let tab = activeTab
             DispatchQueue.main.async { [weak self] in
-                self?.quickAccess.recordRecentFile(item.url)
+                self?.quickAccess.recordRecentFile(item)
             }
             FileSystemService.shared.openFileItem(
                 item,

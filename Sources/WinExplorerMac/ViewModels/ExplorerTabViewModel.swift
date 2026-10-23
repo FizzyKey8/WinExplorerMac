@@ -598,7 +598,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         case .home:
             isLoading = false
             let recents = QuickAccessStore.shared.recentFiles.compactMap {
-                FileSystemService.shared.makeFileItem(from: $0.url)
+                FileSystemService.shared.makeFileItem(from: $0)
             }
             items = recents
             displayedItems = recents

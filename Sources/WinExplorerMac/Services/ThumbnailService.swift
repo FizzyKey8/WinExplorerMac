@@ -71,6 +71,17 @@ public final class ThumbnailService {
 
         let maxPixelSize: Int = targetSize <= 28 ? 64 : (targetSize <= 64 ? 160 : 320)
 
+        // 0. Check if already downloaded/opened in local cache (/tmp/WinExplorerMac_CloudOpened/)
+        if let localCached = CloudDownloadManager.shared.localCachedURL(for: item) {
+            if item.isImage, let img = Self.generateImageThumbnail(at: localCached, maxPixelSize: maxPixelSize) {
+                cache.setObject(img, forKey: key as NSString)
+                return img
+            } else if item.isVideo, let img = Self.generateVideoThumbnail(at: localCached, maxPixelSize: maxPixelSize) {
+                cache.setObject(img, forKey: key as NSString)
+                return img
+            }
+        }
+
         // Cloud virtual items
         if item.isCloudDataless {
             guard (item.isImage || item.isVideo) else {

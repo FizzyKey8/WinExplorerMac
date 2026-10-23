@@ -28,7 +28,36 @@ public final class CloudDownloadManager: ObservableObject {
         return String(abs(item.url.path.hashValue))
     }
 
+    public func localCachedURL(for item: FileItem) -> URL? {
+        let fileName = item.name
+        // 1. By cloudFileId if present
+        if let fid = item.cloudFileId, !fid.isEmpty {
+            let candidate = openedCacheDir.appendingPathComponent(fid).appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        // 2. By path hash
+        let hashK = String(abs(item.url.path.hashValue))
+        let hashCandidate = openedCacheDir.appendingPathComponent(hashK).appendingPathComponent(fileName)
+        if FileManager.default.fileExists(atPath: hashCandidate.path) {
+            return hashCandidate
+        }
+        return nil
+    }
+
+    public func isDownloaded(key: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if evictedKeys.contains(key) { return false }
+        return downloadedKeys.contains(key)
+    }
+
     public func isDownloaded(item: FileItem) -> Bool {
+        if localCachedURL(for: item) != nil {
+            return true
+        }
+
         let k = key(for: item)
         let hashK = String(abs(item.url.path.hashValue))
 

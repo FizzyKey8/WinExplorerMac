@@ -25,14 +25,14 @@ public struct FileItem: Identifiable, Hashable, Sendable {
     public let isDirectory: Bool
     public let isHidden: Bool
     public let isSymlink: Bool
-    public let size: Int64
+    public var size: Int64
     public let creationDate: Date?
     public let modificationDate: Date?
     public let lastAccessDate: Date?
     public let fileTypeDescription: String
     public let posixPermissions: Int
-    public let isCloudDataless: Bool
-    public let cloudFileId: String?
+    public var isCloudDataless: Bool
+    public var cloudFileId: String?
 
     public init(
         url: URL,

@@ -27,9 +27,36 @@ public struct RecentFileRecord: Identifiable, Codable, Hashable {
     public var id: String { path }
     public let path: String
     public let accessedAt: Date
+    public var cloudFileId: String?
+    public var isCloudDataless: Bool
+    public var size: Int64
+    public var name: String?
 
     public var url: URL {
         URL(fileURLWithPath: path, isDirectory: false)
+    }
+
+    public init(path: String, accessedAt: Date, cloudFileId: String? = nil, isCloudDataless: Bool = false, size: Int64 = 0, name: String? = nil) {
+        self.path = path
+        self.accessedAt = accessedAt
+        self.cloudFileId = cloudFileId
+        self.isCloudDataless = isCloudDataless
+        self.size = size
+        self.name = name
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case path, accessedAt, cloudFileId, isCloudDataless, size, name
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.path = try container.decode(String.self, forKey: .path)
+        self.accessedAt = try container.decode(Date.self, forKey: .accessedAt)
+        self.cloudFileId = try container.decodeIfPresent(String.self, forKey: .cloudFileId)
+        self.isCloudDataless = try container.decodeIfPresent(Bool.self, forKey: .isCloudDataless) ?? false
+        self.size = try container.decodeIfPresent(Int64.self, forKey: .size) ?? 0
+        self.name = try container.decodeIfPresent(String.self, forKey: .name)
     }
 }
 
@@ -96,6 +123,25 @@ public final class QuickAccessStore: ObservableObject {
         let stdPath = url.cleanFileURL.path
         pinnedFolders.removeAll { $0.path == stdPath }
         savePinnedFolders()
+    }
+
+    public func recordRecentFile(_ item: FileItem) {
+        guard !item.isDirectory else { return }
+        let std = item.url.cleanFileURL
+        recentFiles.removeAll { $0.path == std.path }
+        let record = RecentFileRecord(
+            path: std.path,
+            accessedAt: Date(),
+            cloudFileId: item.cloudFileId,
+            isCloudDataless: item.isCloudDataless,
+            size: item.size,
+            name: item.name
+        )
+        recentFiles.insert(record, at: 0)
+        if recentFiles.count > 25 {
+            recentFiles = Array(recentFiles.prefix(25))
+        }
+        saveRecentFiles()
     }
 
     public func recordRecentFile(_ url: URL) {
