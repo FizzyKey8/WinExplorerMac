@@ -6,6 +6,7 @@ public struct WinExplorerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var themeManager = ThemeManager.shared
+    @ObservedObject private var defaultFileManager = DefaultFileManagerService.shared
 
     public init() {
         // Guarantee macOS treats this as a regular desktop GUI application with a Dock icon
@@ -52,6 +53,18 @@ public struct WinExplorerApp: App {
                             }
                         }
                     ))
+                }
+            }
+            CommandMenu("Predeterminado") {
+                Button(defaultFileManager.isDefaultFileManager ? "✓ WinExplorerMac es el explorador predeterminado" : "Establecer como explorador predeterminado") {
+                    defaultFileManager.setAsDefaultFileManager()
+                }
+                .disabled(defaultFileManager.isDefaultFileManager)
+
+                if defaultFileManager.isDefaultFileManager {
+                    Button("Restaurar Finder como predeterminado") {
+                        defaultFileManager.restoreFinderAsDefault()
+                    }
                 }
             }
         }
@@ -135,6 +148,56 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Open Files / Folders (Native AppKit Delegate)
+    public func application(_ application: NSApplication, open urls: [URL]) {
+        guard let first = urls.first else { return }
+        handleIncomingURL(first)
+    }
+
+    public func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        guard let first = filenames.first else { return }
+        let url = URL(fileURLWithPath: first)
+        handleIncomingURL(url)
+    }
+
+    private func handleIncomingURL(_ rawURL: URL) {
+        let clean = rawURL.cleanFileURL
+        var isDir: ObjCBool = false
+        _ = FileManager.default.fileExists(atPath: clean.path, isDirectory: &isDir)
+
+        let targetDir: URL
+        let fileToSelect: URL?
+
+        if isDir.boolValue || (FileSystemService.isCloudPath(clean.path) && clean.hasDirectoryPath) {
+            targetDir = clean
+            fileToSelect = nil
+        } else {
+            targetDir = clean.deletingLastPathComponent().cleanFileURL
+            fileToSelect = clean
+        }
+
+        NotificationCenter.default.post(
+            name: .win11NavigateToURL,
+            object: nil,
+            userInfo: [
+                "directory": targetDir,
+                "select": fileToSelect as Any
+            ]
+        )
+
+        DispatchQueue.main.async {
+            if let window = Self.mainExplorerWindow {
+                if window.isMiniaturized {
+                    window.deminiaturize(nil)
+                }
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            } else {
+                NotificationCenter.default.post(name: .win11ReopenMainWindow, object: nil)
+            }
+        }
+    }
+
     // Keep the app running in the Dock when the window is closed with the red 'X' button
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
@@ -207,4 +270,5 @@ public struct WindowAccessor: NSViewRepresentable {
 public extension Notification.Name {
     static let win11TriggerRenameShortcut = Notification.Name("win11TriggerRenameShortcut")
     static let win11ReopenMainWindow = Notification.Name("win11ReopenMainWindow")
+    static let win11NavigateToURL = Notification.Name("win11NavigateToURL")
 }

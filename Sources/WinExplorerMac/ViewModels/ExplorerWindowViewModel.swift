@@ -45,6 +45,40 @@ public final class ExplorerWindowViewModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &serviceCancellables)
         refreshVolumes()
+
+        NotificationCenter.default.addObserver(
+            forName: .win11NavigateToURL,
+            object: nil,
+            queue: .main
+        ) { [weak self] notif in
+            guard let self else { return }
+            guard let dirURL = notif.userInfo?["directory"] as? URL else { return }
+            let selectURL = notif.userInfo?["select"] as? URL
+            self.navigateActiveTab(to: dirURL, selecting: selectURL)
+        }
+    }
+
+    public func navigateActiveTab(to directoryURL: URL, selecting fileURL: URL? = nil) {
+        let dest = NavigationDestination.directory(directoryURL.cleanFileURL)
+        if activeTab.destination != dest {
+            activeTab.navigate(to: dest)
+        }
+        if let fileURL {
+            let clean = fileURL.cleanFileURL
+            activeTab.selectedURLs = [clean]
+            activeTab.lastClickedURL = clean
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.activeTab.selectedURLs = [clean]
+                self?.activeTab.lastClickedURL = clean
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.activeTab.selectedURLs = [clean]
+                self?.activeTab.lastClickedURL = clean
+            }
+        } else {
+            activeTab.selectedURLs.removeAll()
+            activeTab.lastClickedURL = nil
+        }
     }
 
     private func bindTabObservers() {
