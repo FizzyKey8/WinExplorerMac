@@ -170,7 +170,110 @@ public final class FileSystemService {
         path.hasPrefix(cloudStorageRootURL.path) || path.hasPrefix(mobileDocumentsRootURL.path)
     }
 
-    // MARK: - Claro drive Direct Realm Metadata Reader (Bypasses FileProvider O(N^2) Bottleneck)
+    // MARK: - Claro drive Direct Realm Metadata Reader & Preview Credentials
+    public struct ClaroDriveCredentials {
+        public let userAgent: String
+        public let user: String
+        public let userId: String
+        public let serverUrl: String
+        public let password: String
+    }
+
+    private let credentialsLock = NSLock()
+    private var cachedClaroCredentials: ClaroDriveCredentials? = nil
+
+    public func claroDriveCredentials() -> ClaroDriveCredentials? {
+        credentialsLock.lock()
+        if let existing = cachedClaroCredentials {
+            credentialsLock.unlock()
+            return existing
+        }
+        credentialsLock.unlock()
+
+        let containerRoot = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Group Containers/com.clarodrive")
+        let socketPath = containerRoot.appendingPathComponent(".fileprovidersocket").path
+        let domainsDir = containerRoot.appendingPathComponent("File Provider Domains")
+
+        guard let domainEntries = try? fileManager.contentsOfDirectory(
+            at: domainsDir,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ), let domainId = domainEntries.first?.lastPathComponent else {
+            return nil
+        }
+
+        let sock = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard sock >= 0 else { return nil }
+        defer { Darwin.close(sock) }
+
+        var tv = timeval(tv_sec: 2, tv_usec: 0)
+        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = socketPath.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { return nil }
+        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: pathBytes.count) { dst in
+                for i in 0..<pathBytes.count {
+                    dst[i] = pathBytes[i]
+                }
+            }
+        }
+
+        let connectRes = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockAddrPtr in
+                Darwin.connect(sock, sockAddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard connectRes == 0 else { return nil }
+
+        var initialBuf = [UInt8](repeating: 0, count: 1024)
+        _ = Darwin.recv(sock, &initialBuf, initialBuf.count, 0)
+
+        let reply = "FILE_PROVIDER_DOMAIN_IDENTIFIER_REQUEST_REPLY:\(domainId)\n"
+        _ = reply.withCString { cstr in
+            Darwin.send(sock, cstr, strlen(cstr), 0)
+        }
+
+        var accumulated = Data()
+        var chunk = [UInt8](repeating: 0, count: 16384)
+        let start = CFAbsoluteTimeGetCurrent()
+        while (CFAbsoluteTimeGetCurrent() - start) < 1.5 {
+            let n = Darwin.recv(sock, &chunk, chunk.count, 0)
+            if n <= 0 { break }
+            accumulated.append(contentsOf: chunk[0..<n])
+            if let str = String(data: accumulated, encoding: .utf8),
+               str.contains("ACCOUNT_DETAILS:") {
+                break
+            }
+        }
+
+        guard let fullText = String(data: accumulated, encoding: .utf8) else { return nil }
+        for line in fullText.components(separatedBy: "\n") {
+            if line.hasPrefix("ACCOUNT_DETAILS:") {
+                let payload = String(line.dropFirst("ACCOUNT_DETAILS:".count))
+                let parts = payload.components(separatedBy: "~")
+                if parts.count >= 5 {
+                    let creds = ClaroDriveCredentials(
+                        userAgent: parts[0],
+                        user: parts[1],
+                        userId: parts[2],
+                        serverUrl: parts[3],
+                        password: parts[4].trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+                    credentialsLock.lock()
+                    cachedClaroCredentials = creds
+                    credentialsLock.unlock()
+                    return creds
+                }
+            }
+        }
+        return nil
+    }
+
     private static var realmFrameworkLoaded: Bool = {
         let candidates = [
             "/Applications/Claro drive.app/Contents/PlugIns/FileProviderExt.appex/Contents/Frameworks/RealmSwift.framework/Versions/A/RealmSwift",
@@ -347,6 +450,7 @@ public final class FileSystemService {
                         let isDir = (obj.value(forKey: "directory") as? Bool) ?? false
                         let downloaded = (obj.value(forKey: "downloaded") as? Bool) ?? false
                         let isCloudDataless = !isDir && !downloaded
+                        let fileId = obj.value(forKey: "fileId") as? String
                         let size = isDir ? 0 : Int64((obj.value(forKey: "size") as? NSNumber)?.int64Value ?? 0)
                         let modDate = obj.value(forKey: "date") as? Date
                         let creationDate = obj.value(forKey: "creationDate") as? Date
@@ -364,7 +468,8 @@ public final class FileSystemService {
                             lastAccessDate: modDate,
                             fileTypeDescription: fastTypeDescription(forName: fileName, isDirectory: isDir),
                             posixPermissions: 0o755,
-                            isCloudDataless: isCloudDataless
+                            isCloudDataless: isCloudDataless,
+                            cloudFileId: fileId
                         )
                         batch.append(item)
 
@@ -805,7 +910,55 @@ public final class FileSystemService {
 
     // MARK: - Open / Reveal / Terminal / Share
     public func openItem(_ url: URL) {
+        if let webDavUrlStr = claroDriveServerUrl(for: url) {
+            var st = Darwin.stat()
+            let existsLocally = (lstat(url.path, &st) == 0) && ((st.st_flags & 0x40000000) == 0) && (st.st_blocks > 0)
+            if !existsLocally {
+                openClaroDriveRemoteFile(localURL: url, webDavUrlString: webDavUrlStr)
+                return
+            }
+        }
         NSWorkspace.shared.open(url)
+    }
+
+    private func openClaroDriveRemoteFile(localURL: URL, webDavUrlString: String) {
+        let cacheDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudOpened", isDirectory: true)
+        try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        let destURL = cacheDir.appendingPathComponent(localURL.lastPathComponent)
+        if fileManager.fileExists(atPath: destURL.path) {
+            NSWorkspace.shared.open(destURL)
+            return
+        }
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self,
+                  let creds = self.claroDriveCredentials(),
+                  let encoded = webDavUrlString.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
+                  let remoteURL = URL(string: encoded) else {
+                await MainActor.run {
+                    NSWorkspace.shared.open(localURL)
+                }
+                return
+            }
+            var req = URLRequest(url: remoteURL, timeoutInterval: 30)
+            let authData = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
+            req.setValue("Basic \(authData)", forHTTPHeaderField: "Authorization")
+            req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
+
+            if let (data, resp) = try? await URLSession.shared.data(for: req),
+               let http = resp as? HTTPURLResponse,
+               (200...299).contains(http.statusCode),
+               !data.isEmpty {
+                try? data.write(to: destURL, options: .atomic)
+                await MainActor.run {
+                    NSWorkspace.shared.open(destURL)
+                }
+            } else {
+                await MainActor.run {
+                    NSWorkspace.shared.open(localURL)
+                }
+            }
+        }
     }
 
     public func availableApplications(for url: URL) -> [URL] {

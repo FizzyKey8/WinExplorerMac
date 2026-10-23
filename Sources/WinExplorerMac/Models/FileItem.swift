@@ -17,6 +17,7 @@ public struct FileItem: Identifiable, Hashable {
     public let fileTypeDescription: String
     public let posixPermissions: Int
     public let isCloudDataless: Bool
+    public let cloudFileId: String?
 
     public init(
         url: URL,
@@ -30,7 +31,8 @@ public struct FileItem: Identifiable, Hashable {
         lastAccessDate: Date? = nil,
         fileTypeDescription: String? = nil,
         posixPermissions: Int = 0o755,
-        isCloudDataless: Bool = false
+        isCloudDataless: Bool = false,
+        cloudFileId: String? = nil
     ) {
         self.id = url.standardizedFileURL
         self.url = url.standardizedFileURL
@@ -54,6 +56,7 @@ public struct FileItem: Identifiable, Hashable {
         }
         self.posixPermissions = posixPermissions
         self.isCloudDataless = isCloudDataless
+        self.cloudFileId = cloudFileId
     }
 
     public func displayName(showExtensions: Bool) -> String {

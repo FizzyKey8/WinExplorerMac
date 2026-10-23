@@ -204,17 +204,31 @@ public struct Win11ItemIconView: View {
                     Win11FolderIconView(size: size, badgeSymbol: "doc.zipper", badgeColor: Color.orange)
                 }
             } else if let thumbnail = thumbnail ?? ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size) {
-                Image(nsImage: thumbnail)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: max(2.5, size * 0.08), style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: max(2.5, size * 0.08), style: .continuous)
-                            .stroke(Color.primary.opacity(0.15), lineWidth: 0.75)
-                    )
-                    .shadow(color: Color.black.opacity(0.20), radius: max(1, size * 0.04), x: 0, y: 1)
+                ZStack(alignment: .bottomTrailing) {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: max(2.5, size * 0.08), style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: max(2.5, size * 0.08), style: .continuous)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 0.75)
+                        )
+                        .shadow(color: Color.black.opacity(0.20), radius: max(1, size * 0.04), x: 0, y: 1)
+
+                    if item.isCloudDataless && size >= 28 {
+                        Image(systemName: "icloud.and.arrow.down")
+                            .font(.system(size: max(8, size * 0.22), weight: .semibold))
+                            .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                            .padding(max(1.5, size * 0.03))
+                            .background(
+                                Circle()
+                                    .fill(Color(nsColor: .windowBackgroundColor))
+                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
+                            )
+                    }
+                }
             } else {
                 ZStack(alignment: .bottomTrailing) {
                     Image(nsImage: item.systemIcon)
@@ -238,15 +252,16 @@ public struct Win11ItemIconView: View {
             }
         }
         .task(id: "\(item.url.path)|\(Int(size))") {
-            guard !item.isCloudDataless, item.isImage || item.isQuickLookThumbnailSupported else { return }
+            let canLoadCloudPreview = item.isCloudDataless && item.isImage && item.cloudFileId != nil
+            guard (!item.isCloudDataless && (item.isImage || item.isQuickLookThumbnailSupported)) || canLoadCloudPreview else {
+                return
+            }
             if let cached = ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size) {
                 thumbnail = cached
                 return
             }
-            ThumbnailService.shared.loadThumbnail(for: item, targetSize: size) { loaded in
-                if let loaded {
-                    thumbnail = loaded
-                }
+            if let loaded = await ThumbnailService.shared.loadThumbnailAsync(for: item, targetSize: size) {
+                thumbnail = loaded
             }
         }
     }
