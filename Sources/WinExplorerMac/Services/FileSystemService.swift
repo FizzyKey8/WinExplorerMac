@@ -537,6 +537,225 @@ public final class FileSystemService {
         }
     }
 
+    private struct WebDAVParsedEntry {
+        var href: String = ""
+        var isDirectory: Bool = false
+        var fileId: String? = nil
+        var size: Int64 = 0
+        var modDate: Date? = nil
+        var isHidden: Bool = false
+    }
+
+    private final class ClaroDriveWebDAVPropfindParser: NSObject, XMLParserDelegate {
+        var entries: [WebDAVParsedEntry] = []
+        private var currentEntry: WebDAVParsedEntry? = nil
+        private var currentText: String = ""
+        private var insideResourceType: Bool = false
+
+        private static let rfc1123Formatter: DateFormatter = {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "en_US_POSIX")
+            df.timeZone = TimeZone(secondsFromGMT: 0)
+            df.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+            return df
+        }()
+
+        private func localTagName(_ elementName: String) -> String {
+            if let colonIdx = elementName.lastIndex(of: ":") {
+                return String(elementName[elementName.index(after: colonIdx)...]).lowercased()
+            }
+            return elementName.lowercased()
+        }
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String : String] = [:]) {
+            let tag = localTagName(elementName)
+            currentText = ""
+            if tag == "response" {
+                currentEntry = WebDAVParsedEntry()
+                insideResourceType = false
+            } else if tag == "resourcetype" {
+                insideResourceType = true
+            } else if tag == "collection" && insideResourceType {
+                currentEntry?.isDirectory = true
+            }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            currentText.append(string)
+        }
+
+        func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+            let tag = localTagName(elementName)
+            let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if tag == "resourcetype" {
+                insideResourceType = false
+            } else if tag == "href" {
+                if !trimmed.isEmpty, currentEntry?.href.isEmpty == true {
+                    currentEntry?.href = trimmed
+                }
+            } else if tag == "fileid" {
+                if !trimmed.isEmpty {
+                    currentEntry?.fileId = trimmed
+                }
+            } else if tag == "size" || tag == "getcontentlength" {
+                if let val = Int64(trimmed), val > 0 {
+                    currentEntry?.size = val
+                }
+            } else if tag == "getlastmodified" {
+                if !trimmed.isEmpty, let date = Self.rfc1123Formatter.date(from: trimmed) {
+                    currentEntry?.modDate = date
+                }
+            } else if tag == "hidden" {
+                if trimmed.lowercased() == "true" || trimmed == "1" {
+                    currentEntry?.isHidden = true
+                }
+            } else if tag == "response" {
+                if let entry = currentEntry, !entry.href.isEmpty {
+                    entries.append(entry)
+                }
+                currentEntry = nil
+            }
+            currentText = ""
+        }
+    }
+
+    private func streamClaroDriveViaWebDAV(
+        at stdURL: URL,
+        includeHidden: Bool,
+        firstBatchSize: Int,
+        subsequentBatchSize: Int,
+        onBatch: @escaping ([FileItem], Bool) -> Bool
+    ) -> Bool {
+        guard let creds = claroDriveCredentials(),
+              let baseWebDavURL = claroDriveEncodedWebDavURL(for: stdURL) else {
+            return false
+        }
+
+        let propfindBody = """
+        <?xml version="1.0" encoding="utf-8" ?>
+        <d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns">
+          <d:prop>
+            <d:resourcetype/>
+            <d:getlastmodified/>
+            <d:getcontentlength/>
+            <oc:size/>
+            <oc:fileid/>
+            <nc:hidden/>
+          </d:prop>
+        </d:propfind>
+        """.data(using: .utf8)
+
+        let authBase64 = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
+
+        // Try exact encoded URL and trailing-slash variant
+        var candidateURLs: [URL] = [baseWebDavURL]
+        if !baseWebDavURL.absoluteString.hasSuffix("/"),
+           let slashURL = URL(string: baseWebDavURL.absoluteString + "/") {
+            candidateURLs.insert(slashURL, at: 0)
+        }
+
+        var responseData: Data? = nil
+        for targetURL in candidateURLs {
+            var req = URLRequest(url: targetURL, timeoutInterval: 20)
+            req.httpMethod = "PROPFIND"
+            req.setValue("Basic \(authBase64)", forHTTPHeaderField: "Authorization")
+            req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
+            req.setValue("1", forHTTPHeaderField: "Depth")
+            req.setValue("application/xml; charset=utf-8", forHTTPHeaderField: "Content-Type")
+            req.httpBody = propfindBody
+
+            let sem = DispatchSemaphore(value: 0)
+            var fetched: Data? = nil
+            var statusCode: Int = 0
+
+            let task = cloudOpenSession.dataTask(with: req) { data, resp, _ in
+                if let http = resp as? HTTPURLResponse {
+                    statusCode = http.statusCode
+                }
+                fetched = data
+                sem.signal()
+            }
+            task.resume()
+            _ = sem.wait(timeout: .now() + 22)
+
+            if (200...299).contains(statusCode), let data = fetched, !data.isEmpty {
+                responseData = data
+                break
+            }
+        }
+
+        guard let xmlData = responseData else {
+            return false
+        }
+
+        let delegate = ClaroDriveWebDAVPropfindParser()
+        let xmlParser = XMLParser(data: xmlData)
+        xmlParser.delegate = delegate
+        _ = xmlParser.parse()
+
+        guard !delegate.entries.isEmpty else {
+            return false
+        }
+
+        // The first entry in a Depth:1 PROPFIND response is the directory itself
+        let selfHrefTrimmed = delegate.entries[0].href.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        var batch: [FileItem] = []
+        batch.reserveCapacity(firstBatchSize)
+        var isFirstBatch = true
+
+        for (index, entry) in delegate.entries.enumerated() {
+            let trimmedHref = entry.href.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if index == 0 || trimmedHref == selfHrefTrimmed {
+                continue
+            }
+            guard let lastSegment = trimmedHref.split(separator: "/").last.map(String.init) else {
+                continue
+            }
+            let fileName = lastSegment.removingPercentEncoding ?? lastSegment
+            if fileName.isEmpty || fileName == "." || fileName == ".." || fileName == ".__NC_ROOT__" {
+                continue
+            }
+            let isHidden = entry.isHidden || fileName.hasPrefix(".")
+            if !includeHidden && isHidden {
+                continue
+            }
+
+            let isDir = entry.isDirectory
+            let itemURL = stdURL.appendingPathComponent(fileName, isDirectory: isDir)
+            let item = FileItem(
+                url: itemURL,
+                name: fileName,
+                isDirectory: isDir,
+                isHidden: isHidden,
+                isSymlink: false,
+                size: isDir ? 0 : entry.size,
+                creationDate: entry.modDate,
+                modificationDate: entry.modDate,
+                lastAccessDate: entry.modDate,
+                fileTypeDescription: fastTypeDescription(forName: fileName, isDirectory: isDir),
+                posixPermissions: 0o755,
+                isCloudDataless: !isDir,
+                cloudFileId: entry.fileId
+            )
+            batch.append(item)
+
+            let targetSize = isFirstBatch ? firstBatchSize : subsequentBatchSize
+            if batch.count >= targetSize {
+                let shouldContinue = onBatch(batch, false)
+                batch.removeAll(keepingCapacity: true)
+                isFirstBatch = false
+                if !shouldContinue {
+                    return true
+                }
+            }
+        }
+
+        _ = onBatch(batch, true)
+        return true
+    }
+
     private func makeFileItemFromStat(
         parentURL: URL,
         parentPath: String,
@@ -625,6 +844,20 @@ public final class FileSystemService {
             ) {
                 return
             }
+            // Subfolders inside non-materialized folders (e.g., Imagenes/Mis Twices/Sanita hermosa diosa)
+            // are not in the local Realm DB yet because FileProviderExt never finished enumerating Mis Twices.
+            // Query Claro drive WebDAV PROPFIND (Depth: 1) directly so they open in ~200ms without touching the blocked VFS!
+            if streamClaroDriveViaWebDAV(
+                at: stdURL,
+                includeHidden: includeHidden,
+                firstBatchSize: firstBatchSize,
+                subsequentBatchSize: subsequentBatchSize,
+                onBatch: onBatch
+            ) {
+                return
+            }
+            _ = onBatch([], true)
+            return
         }
 
         guard let dirPtr = Darwin.opendir(dirPath) else {
