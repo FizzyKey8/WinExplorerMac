@@ -26,6 +26,17 @@ public final class CloudDownloadManager: ObservableObject {
     }
 
     public func isDownloaded(item: FileItem) -> Bool {
+        // 1. Check if the file is in a cloud storage folder and is resident locally on the file system
+        if FileSystemService.isCloudPath(item.url.path) {
+            var st = Darwin.stat()
+            if lstat(item.url.path, &st) == 0 {
+                let isDataless = (st.st_flags & 0x40000000) != 0 || (st.st_blocks == 0 && st.st_size > 0)
+                if !isDataless {
+                    return true
+                }
+            }
+        }
+
         if !item.isCloudDataless && FileSystemService.isCloudPath(item.url.path) {
             return true
         }

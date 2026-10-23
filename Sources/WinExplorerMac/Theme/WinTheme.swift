@@ -548,6 +548,7 @@ public struct Win11ItemIconView: View {
     public var size: CGFloat = 44
 
     @State private var thumbnail: NSImage?
+    @ObservedObject private var downloadManager = CloudDownloadManager.shared
 
     public init(item: FileItem, size: CGFloat = 44) {
         self.item = item
@@ -596,16 +597,8 @@ public struct Win11ItemIconView: View {
                         .padding(max(2, size * 0.05))
                     }
 
-                    if item.isCloudDataless && size >= 28 {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: max(8, size * 0.22), weight: .semibold))
-                            .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
-                            .padding(max(1.5, size * 0.03))
-                            .background(
-                                Circle()
-                                    .fill(Color(nsColor: .windowBackgroundColor))
-                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
-                            )
+                    if size >= 16 {
+                        cloudStatusBadge(iconSize: size)
                     }
                 }
             } else {
@@ -616,16 +609,8 @@ public struct Win11ItemIconView: View {
                         .scaledToFit()
                         .frame(width: size, height: size)
 
-                    if item.isCloudDataless && size >= 18 {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: max(8, size * 0.28), weight: .semibold))
-                            .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
-                            .padding(max(1.5, size * 0.04))
-                            .background(
-                                Circle()
-                                    .fill(Color(nsColor: .windowBackgroundColor))
-                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
-                            )
+                    if size >= 16 {
+                        cloudStatusBadge(iconSize: size)
                     }
                 }
             }
@@ -641,6 +626,37 @@ public struct Win11ItemIconView: View {
             }
             if let loaded = await ThumbnailService.shared.loadThumbnailAsync(for: item, targetSize: size) {
                 thumbnail = loaded
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cloudStatusBadge(iconSize: CGFloat) -> some View {
+        let isCloud = item.isCloudDataless || item.cloudFileId != nil || FileSystemService.isCloudPath(item.url.path)
+        if isCloud && !item.isDirectory {
+            if downloadManager.isDownloaded(item: item) {
+                // Downloaded locally -> Green checkmark badge!
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: max(8, iconSize * 0.26), weight: .bold))
+                    .foregroundStyle(Color(red: 0.12, green: 0.72, blue: 0.32))
+                    .background(
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: max(6, iconSize * 0.20), height: max(6, iconSize * 0.20))
+                    )
+                    .shadow(color: .black.opacity(0.30), radius: 1, x: 0, y: 0.5)
+                    .padding(max(1, iconSize * 0.03))
+            } else if downloadManager.progress(for: item) == nil {
+                // Virtual in the cloud -> Blue cloud badge!
+                Image(systemName: "icloud.and.arrow.down")
+                    .font(.system(size: max(8, iconSize * 0.26), weight: .semibold))
+                    .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                    .padding(max(1, iconSize * 0.03))
+                    .background(
+                        Circle()
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                            .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
+                    )
             }
         }
     }

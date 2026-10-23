@@ -186,19 +186,29 @@ public final class CloudMediaStreamServer: NSObject {
     }
 
     private func handleClient(_ fd: Int32) {
-        defer { Darwin.close(fd) }
-
         var buffer = [UInt8](repeating: 0, count: 4096)
         let bytesRead = Darwin.recv(fd, &buffer, buffer.count - 1, 0)
-        guard bytesRead > 0 else { return }
+        guard bytesRead > 0 else {
+            Darwin.close(fd)
+            return
+        }
 
         buffer[bytesRead] = 0
-        guard let requestString = String(bytes: buffer[0..<bytesRead], encoding: .utf8) else { return }
+        guard let requestString = String(bytes: buffer[0..<bytesRead], encoding: .utf8) else {
+            Darwin.close(fd)
+            return
+        }
 
         let lines = requestString.components(separatedBy: "\r\n")
-        guard let reqLine = lines.first else { return }
+        guard let reqLine = lines.first else {
+            Darwin.close(fd)
+            return
+        }
         let reqParts = reqLine.components(separatedBy: " ")
-        guard reqParts.count >= 2, reqParts[0] == "GET" || reqParts[0] == "HEAD" else { return }
+        guard reqParts.count >= 2, reqParts[0] == "GET" || reqParts[0] == "HEAD" else {
+            Darwin.close(fd)
+            return
+        }
 
         let reqPath = reqParts[1]
         let isHead = (reqParts[0] == "HEAD")
@@ -207,6 +217,7 @@ public final class CloudMediaStreamServer: NSObject {
         let pathComponents = reqPath.split(separator: "/").map(String.init)
         guard pathComponents.count >= 2, pathComponents[0] == "stream" else {
             send404(fd: fd)
+            Darwin.close(fd)
             return
         }
 
@@ -217,6 +228,7 @@ public final class CloudMediaStreamServer: NSObject {
 
         guard let item = streamItem else {
             send404(fd: fd)
+            Darwin.close(fd)
             return
         }
 
@@ -232,7 +244,7 @@ public final class CloudMediaStreamServer: NSObject {
             }
         }
 
-        // Create streaming delegate and pipeline data chunks directly to socket
+        // Create async streaming connection (NEVER blocks GCD threads with semaphores)
         var req = URLRequest(url: item.remoteURL, timeoutInterval: 60)
         req.httpMethod = isHead ? "HEAD" : "GET"
         req.setValue("Basic \(item.authBase64)", forHTTPHeaderField: "Authorization")
@@ -241,18 +253,8 @@ public final class CloudMediaStreamServer: NSObject {
             req.setValue(range, forHTTPHeaderField: "Range")
         }
 
-        let delegate = StreamProxyDelegate(clientFd: fd, isHead: isHead)
-        let sessionConfig = URLSessionConfiguration.default
-        sessionConfig.timeoutIntervalForRequest = 60
-        sessionConfig.timeoutIntervalForResource = 86400
-        let session = URLSession(configuration: sessionConfig, delegate: delegate, delegateQueue: nil)
-        let task = session.dataTask(with: req)
-        delegate.task = task
-        task.resume()
-
-        // Wait until task finishes or client disconnects
-        delegate.wait()
-        session.finishTasksAndInvalidate()
+        let connection = StreamProxyConnection(clientFd: fd, isHead: isHead)
+        connection.start(request: req)
     }
 
     private func send404(fd: Int32) {
@@ -265,14 +267,16 @@ public final class CloudMediaStreamServer: NSObject {
     }
 }
 
-// MARK: - Streaming Proxy Delegate (Immediate byte-piping to client socket)
-private final class StreamProxyDelegate: NSObject, URLSessionDataDelegate {
-    let clientFd: Int32
-    let isHead: Bool
-    weak var task: URLSessionDataTask?
-    private let semaphore = DispatchSemaphore(value: 0)
+// MARK: - Fully Non-Blocking Streaming Proxy Connection
+private final class StreamProxyConnection: NSObject, URLSessionDataDelegate {
+    private var clientFd: Int32
+    private let isHead: Bool
+    private var session: URLSession?
+    private var task: URLSessionDataTask?
     private var headersSent = false
-    private var isCancelled = false
+    private var isClosed = false
+    private let lock = NSLock()
+    private var retainCycle: StreamProxyConnection?
 
     init(clientFd: Int32, isHead: Bool) {
         self.clientFd = clientFd
@@ -280,14 +284,49 @@ private final class StreamProxyDelegate: NSObject, URLSessionDataDelegate {
         super.init()
     }
 
-    func wait() {
-        _ = semaphore.wait(timeout: .now() + 3600)
+    func start(request: URLRequest) {
+        // Retain self while stream connection is active
+        self.retainCycle = self
+
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 60
+        cfg.timeoutIntervalForResource = 86400
+        let s = URLSession(configuration: cfg, delegate: self, delegateQueue: nil)
+        self.session = s
+        let t = s.dataTask(with: request)
+        self.task = t
+        t.resume()
+    }
+
+    private func closeSocketAndFinish() {
+        lock.lock()
+        guard !isClosed else {
+            lock.unlock()
+            return
+        }
+        isClosed = true
+        let fd = clientFd
+        clientFd = -1
+        let s = session
+        session = nil
+        let t = task
+        task = nil
+        lock.unlock()
+
+        t?.cancel()
+        s?.finishTasksAndInvalidate()
+        if fd >= 0 {
+            Darwin.close(fd)
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.retainCycle = nil
+        }
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        guard !isCancelled, let http = response as? HTTPURLResponse else {
+        guard let http = response as? HTTPURLResponse else {
             completionHandler(.cancel)
-            semaphore.signal()
+            closeSocketAndFinish()
             return
         }
 
@@ -308,14 +347,23 @@ private final class StreamProxyDelegate: NSObject, URLSessionDataDelegate {
         }
         headerOut += "\r\n"
 
+        lock.lock()
+        let fd = clientFd
+        lock.unlock()
+
+        guard fd >= 0 else {
+            completionHandler(.cancel)
+            closeSocketAndFinish()
+            return
+        }
+
         if let hData = headerOut.data(using: .utf8) {
             let sent = hData.withUnsafeBytes { ptr in
-                Darwin.send(clientFd, ptr.baseAddress, ptr.count, 0)
+                Darwin.send(fd, ptr.baseAddress, ptr.count, 0)
             }
             if sent <= 0 {
-                isCancelled = true
                 completionHandler(.cancel)
-                semaphore.signal()
+                closeSocketAndFinish()
                 return
             }
         }
@@ -324,28 +372,35 @@ private final class StreamProxyDelegate: NSObject, URLSessionDataDelegate {
 
         if isHead {
             completionHandler(.cancel)
-            semaphore.signal()
+            closeSocketAndFinish()
         } else {
             completionHandler(.allow)
         }
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        guard !isHead, !isCancelled, headersSent else { return }
+        guard !isHead, headersSent else { return }
 
-        let sent = data.withUnsafeBytes { ptr in
-            Darwin.send(clientFd, ptr.baseAddress, ptr.count, 0)
+        lock.lock()
+        let fd = clientFd
+        lock.unlock()
+
+        guard fd >= 0 else {
+            closeSocketAndFinish()
+            return
         }
 
-        // If client closed socket (e.g. QuickTime seeking to another range), cancel task immediately!
+        let sent = data.withUnsafeBytes { ptr in
+            Darwin.send(fd, ptr.baseAddress, ptr.count, 0)
+        }
+
+        // If client closed socket or aborted (e.g. QuickTime seeking to another timestamp), cancel immediately!
         if sent <= 0 {
-            isCancelled = true
-            task?.cancel()
-            semaphore.signal()
+            closeSocketAndFinish()
         }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        semaphore.signal()
+        closeSocketAndFinish()
     }
 }

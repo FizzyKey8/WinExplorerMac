@@ -1332,7 +1332,8 @@ public final class FileSystemService {
                 }
             }
 
-            // For cloud videos, stream instantly via local HTTP streaming proxy (0 download wait, 0 disk space, starts playing in < 1s)
+            // For cloud videos: 1. Stream instantly to QuickTime Player (plays in < 1s)
+            //                    2. Automatically download in the background with live progress and final checkmark
             if item.isVideo, let remoteURL = self.claroDriveEncodedWebDavURL(for: itemURL) {
                 let streamURL = CloudMediaStreamServer.shared.register(
                     item: item,
@@ -1342,8 +1343,33 @@ public final class FileSystemService {
                 )
                 let opened = CloudMediaStreamServer.shared.openInVideoPlayer(streamURL: streamURL, withApplication: appURL)
                 if opened {
-                    await MainActor.run {
-                        onStatus?(nil)
+                    // Start background download with live progress bar and final checkmark (give QuickTime 2s head start)
+                    Task.detached(priority: .utility) { [weak self] in
+                        guard let self = self else { return }
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        let success = await self.downloadCloudFileWithProgress(
+                            from: remoteURL,
+                            to: destURL,
+                            authBase64: authData,
+                            userAgent: creds.userAgent,
+                            item: item,
+                            onStatus: onStatus
+                        )
+                        if success && self.fileManager.fileExists(atPath: destURL.path) {
+                            CloudDownloadManager.shared.finishDownload(for: item)
+                            let thumbDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews", isDirectory: true)
+                            let thumbFile = thumbDir.appendingPathComponent("\(folderKey).img")
+                            if !self.fileManager.fileExists(atPath: thumbFile.path),
+                               let thumb = ThumbnailService.generateVideoThumbnail(at: destURL, maxPixelSize: 320),
+                               let data = ThumbnailService.jpegData(from: thumb) {
+                                try? data.write(to: thumbFile, options: .atomic)
+                            }
+                        } else {
+                            CloudDownloadManager.shared.cancelDownload(for: item)
+                        }
+                        await MainActor.run {
+                            onStatus?(nil)
+                        }
                     }
                     return
                 }
