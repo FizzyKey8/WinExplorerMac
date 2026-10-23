@@ -25,6 +25,12 @@ public struct Win11CommandBarView: View {
         tab.selectedURLs.count == 1
     }
 
+    private var isSelectedFolder: Bool {
+        guard hasSingleSelection, let url = tab.selectedURLs.first else { return false }
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+    }
+
     public var body: some View {
         HStack(spacing: 4) {
             // "+ Nuevo" Dropdown Button (Windows 11 primary command)
@@ -64,7 +70,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "scissors",
                     tooltip: "Cortar (Cmd+X)",
-                    enabled: isInRealDirectory && hasSelection
+                    enabled: hasSelection
                 ) {
                     windowVM.cutSelection()
                 }
@@ -72,7 +78,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "doc.on.doc",
                     tooltip: "Copiar (Cmd+C)",
-                    enabled: isInRealDirectory && hasSelection
+                    enabled: hasSelection
                 ) {
                     windowVM.copySelection()
                 }
@@ -80,7 +86,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "doc.on.clipboard",
                     tooltip: "Pegar (Cmd+V)",
-                    enabled: isInRealDirectory && clipboard.hasItems
+                    enabled: clipboard.hasItems && (isInRealDirectory || isSelectedFolder)
                 ) {
                     windowVM.pasteIntoCurrentDirectory()
                 }
@@ -88,7 +94,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "character.cursor.ibeam",
                     tooltip: "Cambiar nombre (F2)",
-                    enabled: isInRealDirectory && hasSingleSelection
+                    enabled: hasSingleSelection
                 ) {
                     tab.beginRename()
                 }
@@ -96,7 +102,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "square.and.arrow.up",
                     tooltip: "Compartir",
-                    enabled: isInRealDirectory && hasSelection
+                    enabled: hasSelection
                 ) {
                     windowVM.shareItems(Array(tab.selectedURLs))
                 }
@@ -104,7 +110,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "trash",
                     tooltip: "Eliminar a la Papelera (Cmd+Delete)",
-                    enabled: isInRealDirectory && hasSelection
+                    enabled: hasSelection
                 ) {
                     windowVM.moveSelectedToTrash()
                 }
@@ -112,7 +118,7 @@ public struct Win11CommandBarView: View {
                 commandIconButton(
                     symbol: "doc.zipper",
                     tooltip: "Comprimir en archivo ZIP",
-                    enabled: isInRealDirectory && hasSelection
+                    enabled: hasSelection
                 ) {
                     windowVM.compressSelectedToZip()
                 }

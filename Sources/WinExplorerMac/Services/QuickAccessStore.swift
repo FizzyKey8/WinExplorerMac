@@ -34,6 +34,8 @@ public struct RecentFileRecord: Identifiable, Codable, Hashable {
 }
 
 public final class QuickAccessStore: ObservableObject {
+    public static let shared = QuickAccessStore()
+
     @Published public private(set) var pinnedFolders: [PinnedFolderItem] = []
     @Published public private(set) var recentFiles: [RecentFileRecord] = []
 
@@ -43,6 +45,21 @@ public final class QuickAccessStore: ObservableObject {
     public init() {
         loadPinnedFolders()
         loadRecentFiles()
+    }
+
+    public func updatePath(from oldURL: URL, to newURL: URL) {
+        let oldPath = oldURL.cleanFileURL.path
+        let newPath = newURL.cleanFileURL.path
+        if let idx = recentFiles.firstIndex(where: { $0.path == oldPath }) {
+            let record = recentFiles[idx]
+            recentFiles[idx] = RecentFileRecord(path: newPath, accessedAt: record.accessedAt)
+            saveRecentFiles()
+        }
+        if let idx = pinnedFolders.firstIndex(where: { $0.path == oldPath }) {
+            let pinned = pinnedFolders[idx]
+            pinnedFolders[idx] = PinnedFolderItem(path: newPath, customTitle: pinned.customTitle, isSystemDefault: pinned.isSystemDefault)
+            savePinnedFolders()
+        }
     }
 
     public func isPinned(_ url: URL) -> Bool {

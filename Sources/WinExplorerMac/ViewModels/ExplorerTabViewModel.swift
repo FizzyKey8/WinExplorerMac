@@ -573,7 +573,9 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         guard !proposedName.isEmpty, proposedName != targetURL.lastPathComponent else { return }
         do {
             let newURL = try FileSystemService.shared.renameItem(at: targetURL, to: proposedName)
+            QuickAccessStore.shared.updatePath(from: targetURL, to: newURL)
             selectedURLs = [newURL]
+            lastClickedURL = newURL
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -593,7 +595,14 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         stopDirectoryMonitor()
 
         switch destination {
-        case .home, .thisPC:
+        case .home:
+            isLoading = false
+            let recents = QuickAccessStore.shared.recentFiles.compactMap {
+                FileSystemService.shared.makeFileItem(from: $0.url)
+            }
+            items = recents
+            displayedItems = recents
+        case .thisPC:
             isLoading = false
             items = []
             displayedItems = []

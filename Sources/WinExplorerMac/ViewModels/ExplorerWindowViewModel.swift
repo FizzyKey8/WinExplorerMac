@@ -20,7 +20,7 @@ public final class ExplorerWindowViewModel: ObservableObject {
     @Published public var isSidebarVisible: Bool = true
 
     @Published public var clipboard = FileClipboardService()
-    @Published public var quickAccess = QuickAccessStore()
+    @Published public var quickAccess = QuickAccessStore.shared
     @Published public var volumes: [VolumeInfo] = []
     @Published public var cloudDrives: [CloudDriveInfo] = []
 
@@ -436,7 +436,23 @@ public final class ExplorerWindowViewModel: ObservableObject {
 
     public func pasteIntoCurrentDirectory(targetFolderOverride: URL? = nil) {
         activeContextMenu = nil
-        guard let destinationDir = targetFolderOverride ?? activeTab.currentDirectoryURL else { return }
+        let targetFolder: URL?
+        if let override = targetFolderOverride {
+            targetFolder = override
+        } else if let currentDir = activeTab.currentDirectoryURL {
+            targetFolder = currentDir
+        } else if activeTab.selectedURLs.count == 1, let selected = activeTab.selectedURLs.first {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: selected.path, isDirectory: &isDir), isDir.boolValue {
+                targetFolder = selected
+            } else {
+                targetFolder = nil
+            }
+        } else {
+            targetFolder = nil
+        }
+
+        guard let destinationDir = targetFolder else { return }
         let payload = clipboard.currentItemsForPaste()
         guard !payload.urls.isEmpty else { return }
 
@@ -463,6 +479,9 @@ public final class ExplorerWindowViewModel: ObservableObject {
         guard !urls.isEmpty else { return }
         do {
             try FileSystemService.shared.moveToTrash(urls)
+            for url in urls {
+                quickAccess.removeRecentFile(url)
+            }
             activeTab.selectedURLs.removeAll()
             activeTab.reload()
         } catch {
@@ -472,9 +491,9 @@ public final class ExplorerWindowViewModel: ObservableObject {
 
     public func compressSelectedToZip() {
         activeContextMenu = nil
-        guard let dir = activeTab.currentDirectoryURL else { return }
         let urls = Array(activeTab.selectedURLs)
         guard !urls.isEmpty else { return }
+        guard let dir = activeTab.currentDirectoryURL ?? urls.first?.deletingLastPathComponent() else { return }
         do {
             let zipURL = try ArchiveService.shared.compressToZip(items: urls, in: dir)
             activeTab.reload()
