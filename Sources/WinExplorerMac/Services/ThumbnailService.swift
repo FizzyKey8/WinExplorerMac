@@ -219,7 +219,7 @@ public final class ThumbnailService {
         if item.isImage {
             workQueue.async { [weak self] in
                 let generated = Self.generateImageThumbnail(at: fileURL, maxPixelSize: maxPixelSize)
-                Task { @MainActor [weak self] in
+                DispatchQueue.main.async {
                     if let generated {
                         self?.cache.setObject(generated, forKey: key as NSString)
                     }
@@ -229,12 +229,12 @@ public final class ThumbnailService {
         } else if item.isVideo {
             workQueue.async { [weak self] in
                 if let generated = Self.generateVideoThumbnail(at: fileURL, maxPixelSize: maxPixelSize) {
-                    Task { @MainActor [weak self] in
+                    DispatchQueue.main.async {
                         self?.cache.setObject(generated, forKey: key as NSString)
                         completion(generated)
                     }
                 } else {
-                    Task { @MainActor [weak self] in
+                    DispatchQueue.main.async {
                         self?.generateQuickLookThumbnail(at: fileURL, targetSize: targetSize, key: key, completion: completion)
                     }
                 }
@@ -257,7 +257,7 @@ public final class ThumbnailService {
         )
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
             let image = representation?.nsImage
-            Task { @MainActor [weak self] in
+            DispatchQueue.main.async {
                 if let image {
                     self?.cache.setObject(image, forKey: key as NSString)
                 }

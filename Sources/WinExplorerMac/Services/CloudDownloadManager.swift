@@ -169,8 +169,9 @@ public final class CloudDownloadManager: ObservableObject {
         }
         lock.unlock()
 
+        let foldersList = foldersToClean
         Task.detached(priority: .background) {
-            for folder in foldersToClean {
+            for folder in foldersList {
                 try? FileManager.default.removeItem(at: folder)
             }
         }

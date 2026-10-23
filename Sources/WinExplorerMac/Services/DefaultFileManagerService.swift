@@ -46,7 +46,7 @@ public final class DefaultFileManagerService: ObservableObject {
         // 4. NSWorkspace modern API (macOS 12+)
         let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: appBundleId) ?? Bundle.main.bundleURL
         if #available(macOS 12.0, *) {
-            Task {
+            Task { @MainActor in
                 try? await NSWorkspace.shared.setDefaultApplication(at: appURL, toOpen: UTType.folder)
                 try? await NSWorkspace.shared.setDefaultApplication(at: appURL, toOpen: UTType.directory)
             }
@@ -76,7 +76,7 @@ public final class DefaultFileManagerService: ObservableObject {
         // 4. NSWorkspace modern API
         if let finderURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: finderId) {
             if #available(macOS 12.0, *) {
-                Task {
+                Task { @MainActor in
                     try? await NSWorkspace.shared.setDefaultApplication(at: finderURL, toOpen: UTType.folder)
                     try? await NSWorkspace.shared.setDefaultApplication(at: finderURL, toOpen: UTType.directory)
                 }
