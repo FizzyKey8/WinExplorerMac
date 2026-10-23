@@ -1210,11 +1210,23 @@ public final class FileSystemService {
         onStatus: ((String?) -> Void)? = nil,
         onError: ((String?) -> Void)? = nil
     ) {
+        if !item.isCloudDataless, isFileLocallyPresent(item.url) {
+            openLocalURL(item.url, withApplication: appURL)
+            return
+        }
+
         if item.isCloudDataless || claroDriveServerUrl(for: item.url) != nil {
             openClaroDriveItem(item, withApplication: appURL, onStatus: onStatus, onError: onError)
             return
         }
         openLocalURL(item.url, withApplication: appURL)
+    }
+
+    private func isFileLocallyPresent(_ url: URL) -> Bool {
+        var st = Darwin.stat()
+        guard lstat(url.path, &st) == 0 else { return false }
+        let isDataless = (st.st_flags & 0x40000000) != 0 || (st.st_blocks == 0 && st.st_size > 0)
+        return !isDataless
     }
 
     public func openItem(_ url: URL) {
@@ -1320,7 +1332,24 @@ public final class FileSystemService {
                 }
             }
 
-            // Try WebDAV download directly to disk with live progress (for videos, documents, or full originals)
+            // For cloud videos, stream instantly via local HTTP streaming proxy (0 download wait, 0 disk space, starts playing in < 1s)
+            if item.isVideo, let remoteURL = self.claroDriveEncodedWebDavURL(for: itemURL) {
+                let streamURL = CloudMediaStreamServer.shared.register(
+                    item: item,
+                    remoteURL: remoteURL,
+                    authBase64: authData,
+                    userAgent: creds.userAgent
+                )
+                let opened = CloudMediaStreamServer.shared.openInVideoPlayer(streamURL: streamURL, withApplication: appURL)
+                if opened {
+                    await MainActor.run {
+                        onStatus?(nil)
+                    }
+                    return
+                }
+            }
+
+            // Try WebDAV download directly to disk with live progress (for videos fallback, documents, or full originals)
             if let remoteURL = self.claroDriveEncodedWebDavURL(for: itemURL) {
                 let success = await self.downloadCloudFileWithProgress(
                     from: remoteURL,
@@ -1373,8 +1402,8 @@ public final class FileSystemService {
 
         return await withCheckedContinuation { continuation in
             let cfg = URLSessionConfiguration.default
-            cfg.timeoutIntervalForRequest = 120
-            cfg.timeoutIntervalForResource = 3600
+            cfg.timeoutIntervalForRequest = 180
+            cfg.timeoutIntervalForResource = 7200
             let session = URLSession(configuration: cfg)
             var lastUpdate: CFAbsoluteTime = 0
 
@@ -1400,11 +1429,11 @@ public final class FileSystemService {
 
             observation = task.progress.observe(\.fractionCompleted) { progress, _ in
                 let fraction = progress.fractionCompleted
-                CloudDownloadManager.shared.updateProgress(for: item, fraction: fraction)
 
                 let now = CFAbsoluteTimeGetCurrent()
                 if now - lastUpdate >= 0.25 || fraction >= 1.0 {
                     lastUpdate = now
+                    CloudDownloadManager.shared.updateProgress(for: item, fraction: fraction)
                     let percent = Int(fraction * 100)
                     let totalBytes = progress.totalUnitCount
                     let completedBytes = progress.completedUnitCount

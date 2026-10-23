@@ -11,6 +11,7 @@ public final class CloudDownloadManager: ObservableObject {
     @Published public private(set) var downloadedKeys: Set<String> = []
 
     private let lock = NSLock()
+    private var lastUIUpdate: [String: CFAbsoluteTime] = [:]
     private let openedCacheDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudOpened", isDirectory: true)
 
     private init() {
@@ -53,11 +54,20 @@ public final class CloudDownloadManager: ObservableObject {
 
     public func updateProgress(for item: FileItem, fraction: Double) {
         let k = key(for: item)
+        let now = CFAbsoluteTimeGetCurrent()
         lock.lock()
+        let last = lastUIUpdate[k] ?? 0
+        let shouldNotify = (now - last >= 0.15) || (fraction >= 1.0) || (fraction <= 0.05)
         activeDownloads[k] = fraction
+        if shouldNotify {
+            lastUIUpdate[k] = now
+        }
         lock.unlock()
-        DispatchQueue.main.async { [weak self] in
-            self?.objectWillChange.send()
+
+        if shouldNotify {
+            DispatchQueue.main.async { [weak self] in
+                self?.objectWillChange.send()
+            }
         }
     }
 
@@ -65,6 +75,7 @@ public final class CloudDownloadManager: ObservableObject {
         let k = key(for: item)
         lock.lock()
         activeDownloads.removeValue(forKey: k)
+        lastUIUpdate.removeValue(forKey: k)
         downloadedKeys.insert(k)
         lock.unlock()
         DispatchQueue.main.async { [weak self] in
@@ -76,6 +87,7 @@ public final class CloudDownloadManager: ObservableObject {
         let k = key(for: item)
         lock.lock()
         activeDownloads.removeValue(forKey: k)
+        lastUIUpdate.removeValue(forKey: k)
         lock.unlock()
         DispatchQueue.main.async { [weak self] in
             self?.objectWillChange.send()
