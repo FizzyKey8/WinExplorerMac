@@ -210,6 +210,7 @@ private struct Win11GridItemCell: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered: Bool = false
+    @ObservedObject private var downloadManager = CloudDownloadManager.shared
 
     private var isSelected: Bool {
         tab.selectedURLs.contains(item.url)
@@ -220,7 +221,7 @@ private struct Win11GridItemCell: View {
     }
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 5) {
             ZStack(alignment: .topLeading) {
                 Win11ItemIconView(item: item, size: tab.viewMode.iconSize)
                     .opacity((item.isHidden || isCut) ? 0.50 : 1.0)
@@ -235,7 +236,18 @@ private struct Win11GridItemCell: View {
                 }
             }
 
-            if isRenaming {
+            if let progress = downloadManager.progress(for: item) {
+                VStack(spacing: 3) {
+                    ProgressView(value: max(0.02, min(1.0, progress)))
+                        .progressViewStyle(.linear)
+                        .tint(Color(red: 0.05, green: 0.52, blue: 0.95))
+                        .frame(width: max(44, tab.viewMode.gridCellWidth - 28))
+                    Text("\(Int(progress * 100))%")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                }
+                .padding(.top, 1)
+            } else if isRenaming {
                 TextField("", text: $tab.renamingText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11.5))
@@ -304,6 +316,7 @@ private struct Win11ListItemRow: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered: Bool = false
+    @ObservedObject private var downloadManager = CloudDownloadManager.shared
 
     private var isSelected: Bool {
         tab.selectedURLs.contains(item.url)
@@ -329,9 +342,23 @@ private struct Win11ListItemRow: View {
                         tab.cancelRename()
                     }
             } else {
-                Text(item.displayName(showExtensions: tab.showFileExtensions))
-                    .font(.system(size: 12))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(item.displayName(showExtensions: tab.showFileExtensions))
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+
+                    if let progress = downloadManager.progress(for: item) {
+                        HStack(spacing: 4) {
+                            ProgressView(value: max(0.02, min(1.0, progress)))
+                                .progressViewStyle(.linear)
+                                .tint(Color(red: 0.05, green: 0.52, blue: 0.95))
+                                .frame(width: 45)
+                            Text("\(Int(progress * 100))%")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                        }
+                    }
+                }
             }
             Spacer()
         }
@@ -372,6 +399,7 @@ private struct Win11DetailsTableRow: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered: Bool = false
+    @ObservedObject private var downloadManager = CloudDownloadManager.shared
 
     private var isSelected: Bool {
         tab.selectedURLs.contains(item.url)
@@ -399,10 +427,24 @@ private struct Win11DetailsTableRow: View {
                             tab.cancelRename()
                         }
                 } else {
-                    Text(item.displayName(showExtensions: tab.showFileExtensions))
-                        .font(.system(size: 12.5))
-                        .lineLimit(1)
-                        .opacity(item.isHidden ? 0.65 : 1.0)
+                    HStack(spacing: 6) {
+                        Text(item.displayName(showExtensions: tab.showFileExtensions))
+                            .font(.system(size: 12.5))
+                            .lineLimit(1)
+                            .opacity(item.isHidden ? 0.65 : 1.0)
+
+                        if let progress = downloadManager.progress(for: item) {
+                            HStack(spacing: 4) {
+                                ProgressView(value: max(0.02, min(1.0, progress)))
+                                    .progressViewStyle(.linear)
+                                    .tint(Color(red: 0.05, green: 0.52, blue: 0.95))
+                                    .frame(width: 50)
+                                Text("\(Int(progress * 100))%")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                            }
+                        }
+                    }
                 }
             }
             .frame(minWidth: 260, maxWidth: .infinity, alignment: .leading)

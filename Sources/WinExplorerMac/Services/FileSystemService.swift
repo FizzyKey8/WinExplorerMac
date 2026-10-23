@@ -1259,6 +1259,7 @@ public final class FileSystemService {
 
         // 1. Instant open (< 1ms) if already in /tmp/WinExplorerMac_CloudOpened/<folderKey>/<name>
         if fileManager.fileExists(atPath: destURL.path) {
+            CloudDownloadManager.shared.finishDownload(for: item)
             onStatus?(nil)
             openLocalURL(destURL, withApplication: appURL)
             return
@@ -1273,6 +1274,7 @@ public final class FileSystemService {
             if fileManager.fileExists(atPath: previewDiskFile.path),
                let previewData = try? Data(contentsOf: previewDiskFile),
                Self.writeConvertedImageData(previewData, to: destURL, fileExtension: item.fileExtension) {
+                CloudDownloadManager.shared.finishDownload(for: item)
                 onStatus?(nil)
                 openLocalURL(destURL, withApplication: appURL)
                 return
@@ -1290,6 +1292,7 @@ public final class FileSystemService {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self,
                   let creds = self.claroDriveCredentials() else {
+                CloudDownloadManager.shared.cancelDownload(for: item)
                 await MainActor.run {
                     onStatus?(nil)
                     onError?("No se pudieron obtener las credenciales de Claro drive para abrir '\(itemName)'.")
@@ -1302,10 +1305,12 @@ public final class FileSystemService {
             // Try fast fileId preview endpoint first for non-GIF images (returns 1080p/2K in ~150ms)
             if isImage, ext != "gif", let fid = fileId, !fid.isEmpty,
                let previewURL = URL(string: "\(creds.serverUrl)/index.php/core/preview?fileId=\(fid)&x=2048&y=2048&a=1") {
+                CloudDownloadManager.shared.updateProgress(for: item, fraction: 0.15)
                 if let data = await self.fetchCloudDataWithRetry(url: previewURL, authBase64: authData, userAgent: creds.userAgent) {
                     let previewDiskFile = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews/\(fid).img", isDirectory: false)
                     try? data.write(to: previewDiskFile, options: .atomic)
                     if Self.writeConvertedImageData(data, to: destURL, fileExtension: ext) {
+                        CloudDownloadManager.shared.finishDownload(for: item)
                         await MainActor.run {
                             onStatus?(nil)
                             self.openLocalURL(destURL, withApplication: appURL)
@@ -1315,15 +1320,27 @@ public final class FileSystemService {
                 }
             }
 
-            // Try WebDAV GET with properly encoded path segments
-            if let remoteURL = self.claroDriveEncodedWebDavURL(for: itemURL),
-               let data = await self.fetchCloudDataWithRetry(url: remoteURL, authBase64: authData, userAgent: creds.userAgent) {
-                if isImage && ext != "gif" {
-                    _ = Self.writeConvertedImageData(data, to: destURL, fileExtension: ext)
-                } else {
-                    try? data.write(to: destURL, options: .atomic)
-                }
-                if self.fileManager.fileExists(atPath: destURL.path) {
+            // Try WebDAV download directly to disk with live progress (for videos, documents, or full originals)
+            if let remoteURL = self.claroDriveEncodedWebDavURL(for: itemURL) {
+                let success = await self.downloadCloudFileWithProgress(
+                    from: remoteURL,
+                    to: destURL,
+                    authBase64: authData,
+                    userAgent: creds.userAgent,
+                    item: item,
+                    onStatus: onStatus
+                )
+                if success && self.fileManager.fileExists(atPath: destURL.path) {
+                    CloudDownloadManager.shared.finishDownload(for: item)
+                    if item.isVideo {
+                        let thumbDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews", isDirectory: true)
+                        let thumbFile = thumbDir.appendingPathComponent("\(folderKey).img")
+                        if !self.fileManager.fileExists(atPath: thumbFile.path),
+                           let thumb = ThumbnailService.generateVideoThumbnail(at: destURL, maxPixelSize: 320),
+                           let data = ThumbnailService.jpegData(from: thumb) {
+                            try? data.write(to: thumbFile, options: .atomic)
+                        }
+                    }
                     await MainActor.run {
                         onStatus?(nil)
                         self.openLocalURL(destURL, withApplication: appURL)
@@ -1332,10 +1349,80 @@ public final class FileSystemService {
                 }
             }
 
+            CloudDownloadManager.shared.cancelDownload(for: item)
             await MainActor.run {
                 onStatus?(nil)
                 onError?("No se pudo abrir '\(itemName)' desde Claro drive. Inténtalo de nuevo en unos segundos.")
             }
+        }
+    }
+
+    private func downloadCloudFileWithProgress(
+        from remoteURL: URL,
+        to destURL: URL,
+        authBase64: String,
+        userAgent: String,
+        item: FileItem,
+        onStatus: ((String?) -> Void)?
+    ) async -> Bool {
+        var req = URLRequest(url: remoteURL, timeoutInterval: 120)
+        req.setValue("Basic \(authBase64)", forHTTPHeaderField: "Authorization")
+        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+
+        CloudDownloadManager.shared.updateProgress(for: item, fraction: 0.02)
+
+        return await withCheckedContinuation { continuation in
+            let cfg = URLSessionConfiguration.default
+            cfg.timeoutIntervalForRequest = 120
+            cfg.timeoutIntervalForResource = 3600
+            let session = URLSession(configuration: cfg)
+            var lastUpdate: CFAbsoluteTime = 0
+
+            var observation: NSKeyValueObservation?
+            let task = session.downloadTask(with: req) { tempURL, resp, _ in
+                _ = observation
+                observation = nil
+                session.finishTasksAndInvalidate()
+                guard let tempURL = tempURL,
+                      let http = resp as? HTTPURLResponse,
+                      (200...299).contains(http.statusCode) else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                do {
+                    try? FileManager.default.removeItem(at: destURL)
+                    try FileManager.default.moveItem(at: tempURL, to: destURL)
+                    continuation.resume(returning: true)
+                } catch {
+                    continuation.resume(returning: false)
+                }
+            }
+
+            observation = task.progress.observe(\.fractionCompleted) { progress, _ in
+                let fraction = progress.fractionCompleted
+                CloudDownloadManager.shared.updateProgress(for: item, fraction: fraction)
+
+                let now = CFAbsoluteTimeGetCurrent()
+                if now - lastUpdate >= 0.25 || fraction >= 1.0 {
+                    lastUpdate = now
+                    let percent = Int(fraction * 100)
+                    let totalBytes = progress.totalUnitCount
+                    let completedBytes = progress.completedUnitCount
+                    if totalBytes > 0 {
+                        let mbDone = Double(completedBytes) / (1024 * 1024)
+                        let mbTotal = Double(totalBytes) / (1024 * 1024)
+                        DispatchQueue.main.async {
+                            onStatus?(String(format: "Descargando '%@' (%.1f MB / %.1f MB - %d%%)...", item.name, mbDone, mbTotal, percent))
+                        }
+                    } else {
+                        DispatchQueue.main.async {
+                            onStatus?("Descargando '\(item.name)' (\(percent)%)...")
+                        }
+                    }
+                }
+            }
+
+            task.resume()
         }
     }
 

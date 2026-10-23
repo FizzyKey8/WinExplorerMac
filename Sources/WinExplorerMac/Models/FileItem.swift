@@ -17,7 +17,7 @@ public extension URL {
     }
 }
 
-public struct FileItem: Identifiable, Hashable {
+public struct FileItem: Identifiable, Hashable, Sendable {
     public let id: URL
     public let url: URL
     public let name: String

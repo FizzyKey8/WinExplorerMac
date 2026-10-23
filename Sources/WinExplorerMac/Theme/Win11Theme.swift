@@ -178,11 +178,74 @@ public struct Win11FolderIconView: View {
     }
 }
 
+public struct Win11CloudStatusBadgeView: View {
+    public let item: FileItem
+    public var size: CGFloat = 16
+    @ObservedObject private var downloadManager = CloudDownloadManager.shared
+
+    public init(item: FileItem, size: CGFloat = 16) {
+        self.item = item
+        self.size = size
+    }
+
+    private var isCloudItem: Bool {
+        item.isCloudDataless || FileSystemService.isCloudPath(item.url.path)
+    }
+
+    public var body: some View {
+        if isCloudItem && !item.isDirectory {
+            if let progress = downloadManager.progress(for: item) {
+                // Downloading progress ring badge
+                ZStack {
+                    Circle()
+                        .fill(Color(nsColor: .windowBackgroundColor))
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: max(1.5, size * 0.14))
+                    Circle()
+                        .trim(from: 0, to: CGFloat(max(0.08, min(1.0, progress))))
+                        .stroke(Color(red: 0.05, green: 0.52, blue: 0.95), style: StrokeStyle(lineWidth: max(1.5, size * 0.14), lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: max(5, size * 0.42), weight: .bold))
+                        .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                }
+                .frame(width: size, height: size)
+                .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
+            } else if downloadManager.isDownloaded(item: item) {
+                // Downloaded badge -> Windows 11 Green Checkmark Circle ("palomita verde")
+                ZStack {
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: size * 0.88, height: size * 0.88)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: size, weight: .bold))
+                        .foregroundStyle(Color(red: 0.13, green: 0.69, blue: 0.30))
+                }
+                .frame(width: size, height: size)
+                .shadow(color: .black.opacity(0.22), radius: 1, x: 0, y: 0.5)
+            } else if item.isCloudDataless {
+                // Virtual cloud badge -> Blue Cloud
+                ZStack {
+                    Circle()
+                        .fill(Color(nsColor: .windowBackgroundColor))
+                        .frame(width: size, height: size)
+                        .shadow(color: .black.opacity(0.2), radius: 1, x: 0, y: 0.5)
+                    Image(systemName: "cloud.fill")
+                        .font(.system(size: max(6, size * 0.60), weight: .semibold))
+                        .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                }
+                .frame(width: size, height: size)
+            }
+        }
+    }
+}
+
 public struct Win11ItemIconView: View {
     public let item: FileItem
     public var size: CGFloat = 44
 
     @State private var thumbnail: NSImage?
+    @ObservedObject private var downloadManager = CloudDownloadManager.shared
 
     public init(item: FileItem, size: CGFloat = 44) {
         self.item = item
@@ -231,16 +294,8 @@ public struct Win11ItemIconView: View {
                         .padding(max(2, size * 0.05))
                     }
 
-                    if item.isCloudDataless && size >= 28 {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: max(8, size * 0.22), weight: .semibold))
-                            .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
-                            .padding(max(1.5, size * 0.03))
-                            .background(
-                                Circle()
-                                    .fill(Color(nsColor: .windowBackgroundColor))
-                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
-                            )
+                    if size >= 18 {
+                        Win11CloudStatusBadgeView(item: item, size: max(11, size * 0.28))
                     }
                 }
             } else {
@@ -251,16 +306,8 @@ public struct Win11ItemIconView: View {
                         .scaledToFit()
                         .frame(width: size, height: size)
 
-                    if item.isCloudDataless && size >= 18 {
-                        Image(systemName: "icloud.and.arrow.down")
-                            .font(.system(size: max(8, size * 0.28), weight: .semibold))
-                            .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
-                            .padding(max(1.5, size * 0.04))
-                            .background(
-                                Circle()
-                                    .fill(Color(nsColor: .windowBackgroundColor))
-                                    .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 0.5)
-                            )
+                    if size >= 16 {
+                        Win11CloudStatusBadgeView(item: item, size: max(10, size * 0.32))
                     }
                 }
             }
