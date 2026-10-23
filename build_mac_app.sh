@@ -8,7 +8,7 @@ MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
 echo "🔨 Compilando ${APP_NAME} en modo Release para macOS..."
-swift build -c release
+swift build -c release --disable-sandbox
 
 echo "📦 Creando estructura de aplicación ${BUNDLE_DIR}..."
 rm -rf "${BUNDLE_DIR}"

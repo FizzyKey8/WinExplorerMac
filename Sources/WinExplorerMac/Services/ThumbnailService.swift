@@ -29,6 +29,7 @@ private actor CloudPreviewConcurrencyLimiter {
     }
 }
 
+@MainActor
 public final class ThumbnailService {
     public static let shared = ThumbnailService()
 
@@ -49,22 +50,22 @@ public final class ThumbnailService {
         try? FileManager.default.createDirectory(at: cloudPreviewCacheDir, withIntermediateDirectories: true)
     }
 
-    public func cacheKey(for item: FileItem, targetSize: CGFloat) -> NSString {
+    public func cacheKey(for item: FileItem, targetSize: CGFloat) -> String {
         let bucket = targetSize <= 28 ? 64 : (targetSize <= 64 ? 160 : 320)
         if let fileId = item.cloudFileId, !fileId.isEmpty {
-            return "cloud|\(fileId)|\(bucket)" as NSString
+            return "cloud|\(fileId)|\(bucket)"
         }
         let modTime = item.modificationDate?.timeIntervalSince1970 ?? 0
-        return "\(item.url.path)|\(Int(modTime))|\(bucket)" as NSString
+        return "\(item.url.path)|\(Int(modTime))|\(bucket)"
     }
 
     public func cachedThumbnail(for item: FileItem, targetSize: CGFloat) -> NSImage? {
-        cache.object(forKey: cacheKey(for: item, targetSize: targetSize))
+        cache.object(forKey: cacheKey(for: item, targetSize: targetSize) as NSString)
     }
 
     public func loadThumbnailAsync(for item: FileItem, targetSize: CGFloat) async -> NSImage? {
         let key = cacheKey(for: item, targetSize: targetSize)
-        if let cached = cache.object(forKey: key) {
+        if let cached = cache.object(forKey: key as NSString) {
             return cached
         }
 
@@ -82,7 +83,7 @@ public final class ThumbnailService {
             if FileManager.default.fileExists(atPath: diskFile.path),
                let data = try? Data(contentsOf: diskFile),
                let img = Self.generateImageThumbnailFromData(data, maxPixelSize: maxPixelSize) {
-                cache.setObject(img, forKey: key)
+                cache.setObject(img, forKey: key as NSString)
                 return img
             }
 
@@ -100,7 +101,7 @@ public final class ThumbnailService {
                 if let files = try? FileManager.default.contentsOfDirectory(at: openedDir, includingPropertiesForKeys: nil),
                    let firstVid = files.first(where: { !["img", "txt"].contains($0.pathExtension.lowercased()) }) {
                     if let generated = Self.generateVideoThumbnail(at: firstVid, maxPixelSize: maxPixelSize) {
-                        cache.setObject(generated, forKey: key)
+                        cache.setObject(generated, forKey: key as NSString)
                         if let data = Self.jpegData(from: generated) {
                             try? data.write(to: diskFile, options: .atomic)
                         }
@@ -117,7 +118,7 @@ public final class ThumbnailService {
                         "User-Agent": creds.userAgent
                     ]
                     if let generated = await Self.generateRemoteVideoThumbnail(remoteURL: remoteURL, headers: headers, maxPixelSize: maxPixelSize) {
-                        cache.setObject(generated, forKey: key)
+                        cache.setObject(generated, forKey: key as NSString)
                         if let data = Self.jpegData(from: generated) {
                             try? data.write(to: diskFile, options: .atomic)
                         }
@@ -136,7 +137,7 @@ public final class ThumbnailService {
         }
     }
 
-    private func loadClaroDrivePreview(fileId: String, maxPixelSize: Int, cacheKey: NSString) async -> NSImage? {
+    private func loadClaroDrivePreview(fileId: String, maxPixelSize: Int, cacheKey: String) async -> NSImage? {
         if Task.isCancelled { return nil }
         let diskFile = cloudPreviewCacheDir.appendingPathComponent("\(fileId).img")
 
@@ -144,7 +145,7 @@ public final class ThumbnailService {
         if FileManager.default.fileExists(atPath: diskFile.path),
            let data = try? Data(contentsOf: diskFile),
            let img = Self.generateImageThumbnailFromData(data, maxPixelSize: maxPixelSize) {
-            cache.setObject(img, forKey: cacheKey)
+            cache.setObject(img, forKey: cacheKey as NSString)
             return img
         }
 
@@ -155,7 +156,7 @@ public final class ThumbnailService {
         }
 
         if Task.isCancelled { return nil }
-        if let cached = cache.object(forKey: cacheKey) {
+        if let cached = cache.object(forKey: cacheKey as NSString) {
             return cached
         }
 
@@ -177,7 +178,7 @@ public final class ThumbnailService {
                     if (200...299).contains(http.statusCode), !data.isEmpty {
                         try? data.write(to: diskFile, options: .atomic)
                         if let img = Self.generateImageThumbnailFromData(data, maxPixelSize: maxPixelSize) {
-                            cache.setObject(img, forKey: cacheKey)
+                            cache.setObject(img, forKey: cacheKey as NSString)
                             return img
                         }
                         return nil
@@ -194,14 +195,12 @@ public final class ThumbnailService {
         return nil
     }
 
-    public func loadThumbnail(for item: FileItem, targetSize: CGFloat, completion: @escaping (NSImage?) -> Void) {
+    public func loadThumbnail(for item: FileItem, targetSize: CGFloat, completion: @escaping @MainActor (NSImage?) -> Void) {
         if item.isCloudDataless {
             if (item.isImage || item.isVideo) {
                 Task {
                     let loaded = await loadThumbnailAsync(for: item, targetSize: targetSize)
-                    await MainActor.run {
-                        completion(loaded)
-                    }
+                    completion(loaded)
                 }
             } else {
                 completion(nil)
@@ -209,7 +208,7 @@ public final class ThumbnailService {
             return
         }
         let key = cacheKey(for: item, targetSize: targetSize)
-        if let cached = cache.object(forKey: key) {
+        if let cached = cache.object(forKey: key as NSString) {
             completion(cached)
             return
         }
@@ -220,22 +219,24 @@ public final class ThumbnailService {
         if item.isImage {
             workQueue.async { [weak self] in
                 let generated = Self.generateImageThumbnail(at: fileURL, maxPixelSize: maxPixelSize)
-                if let generated {
-                    self?.cache.setObject(generated, forKey: key)
-                }
-                DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
+                    if let generated {
+                        self?.cache.setObject(generated, forKey: key as NSString)
+                    }
                     completion(generated)
                 }
             }
         } else if item.isVideo {
             workQueue.async { [weak self] in
                 if let generated = Self.generateVideoThumbnail(at: fileURL, maxPixelSize: maxPixelSize) {
-                    self?.cache.setObject(generated, forKey: key)
-                    DispatchQueue.main.async {
+                    Task { @MainActor [weak self] in
+                        self?.cache.setObject(generated, forKey: key as NSString)
                         completion(generated)
                     }
                 } else {
-                    self?.generateQuickLookThumbnail(at: fileURL, targetSize: targetSize, key: key, completion: completion)
+                    Task { @MainActor [weak self] in
+                        self?.generateQuickLookThumbnail(at: fileURL, targetSize: targetSize, key: key, completion: completion)
+                    }
                 }
             }
         } else if item.isQuickLookThumbnailSupported {
@@ -245,7 +246,7 @@ public final class ThumbnailService {
         }
     }
 
-    private func generateQuickLookThumbnail(at fileURL: URL, targetSize: CGFloat, key: NSString, completion: @escaping (NSImage?) -> Void) {
+    private func generateQuickLookThumbnail(at fileURL: URL, targetSize: CGFloat, key: String, completion: @escaping @MainActor (NSImage?) -> Void) {
         let scale = NSScreen.main?.backingScaleFactor ?? 2.0
         let qlSize = CGSize(width: max(32, targetSize), height: max(32, targetSize))
         let request = QLThumbnailGenerator.Request(
@@ -256,16 +257,16 @@ public final class ThumbnailService {
         )
         QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
             let image = representation?.nsImage
-            if let image {
-                self?.cache.setObject(image, forKey: key)
-            }
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
+                if let image {
+                    self?.cache.setObject(image, forKey: key as NSString)
+                }
                 completion(image)
             }
         }
     }
 
-    public static func generateVideoThumbnail(at url: URL, maxPixelSize: Int) -> NSImage? {
+    nonisolated public static func generateVideoThumbnail(at url: URL, maxPixelSize: Int) -> NSImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -313,13 +314,13 @@ public final class ThumbnailService {
         }
     }
 
-    public static func jpegData(from image: NSImage) -> Data? {
+    nonisolated public static func jpegData(from image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff) else { return nil }
         return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.88])
     }
 
-    private static func generateImageThumbnailFromData(_ data: Data, maxPixelSize: Int) -> NSImage? {
+    nonisolated private static func generateImageThumbnailFromData(_ data: Data, maxPixelSize: Int) -> NSImage? {
         if let source = CGImageSourceCreateWithData(data as CFData, nil) {
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -334,7 +335,7 @@ public final class ThumbnailService {
         return NSImage(data: data)
     }
 
-    private static func generateImageThumbnail(at url: URL, maxPixelSize: Int) -> NSImage? {
+    nonisolated private static func generateImageThumbnail(at url: URL, maxPixelSize: Int) -> NSImage? {
         if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
             let options: [CFString: Any] = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,

@@ -1471,12 +1471,16 @@ public final class FileSystemService {
             cfg.timeoutIntervalForRequest = 180
             cfg.timeoutIntervalForResource = 7200
             let session = URLSession(configuration: cfg)
-            var lastUpdate: CFAbsoluteTime = 0
+            
+            final class DownloadStateBox: @unchecked Sendable {
+                var observation: NSKeyValueObservation?
+                var lastUpdate: CFAbsoluteTime = 0
+            }
+            let box = DownloadStateBox()
 
-            var observation: NSKeyValueObservation?
             let task = session.downloadTask(with: req) { tempURL, resp, _ in
-                _ = observation
-                observation = nil
+                box.observation?.invalidate()
+                box.observation = nil
                 session.finishTasksAndInvalidate()
                 guard let tempURL = tempURL,
                       let http = resp as? HTTPURLResponse,
@@ -1493,12 +1497,12 @@ public final class FileSystemService {
                 }
             }
 
-            observation = task.progress.observe(\.fractionCompleted) { progress, _ in
+            box.observation = task.progress.observe(\.fractionCompleted) { progress, _ in
                 let fraction = progress.fractionCompleted
 
                 let now = CFAbsoluteTimeGetCurrent()
-                if now - lastUpdate >= 0.25 || fraction >= 1.0 {
-                    lastUpdate = now
+                if now - box.lastUpdate >= 0.25 || fraction >= 1.0 {
+                    box.lastUpdate = now
                     CloudDownloadManager.shared.updateProgress(for: item, fraction: fraction)
                     let percent = Int(fraction * 100)
                     let totalBytes = progress.totalUnitCount

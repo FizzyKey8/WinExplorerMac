@@ -27,6 +27,13 @@ jobs:
           CLEAN_VER="${GITHUB_REF_NAME#v}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${CLEAN_VER}" Resources/Info.plist
 
+      - name: Select Xcode Version
+        run: |
+          if [ -d "/Applications/Xcode_15.4.app" ]; then
+            sudo xcode-select -switch /Applications/Xcode_15.4.app/Contents/Developer
+          fi
+          xcodebuild -version
+
       - name: Build & Package WinExplorerMac.app
         run: |
           chmod +x build_mac_app.sh
