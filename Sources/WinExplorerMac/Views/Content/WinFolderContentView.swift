@@ -202,7 +202,7 @@ public struct Win11FolderContentView: View {
 }
 
 // MARK: - Grid Item Cell
-private struct Win11GridItemCell: View {
+struct Win11GridItemCell: View {
     let windowVM: ExplorerWindowViewModel
     @ObservedObject var tab: ExplorerTabViewModel
     let item: FileItem
@@ -308,7 +308,7 @@ private struct Win11GridItemCell: View {
 }
 
 // MARK: - Compact List Row
-private struct Win11ListItemRow: View {
+struct Win11ListItemRow: View {
     let windowVM: ExplorerWindowViewModel
     @ObservedObject var tab: ExplorerTabViewModel
     let item: FileItem

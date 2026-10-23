@@ -56,36 +56,104 @@ public struct Win11HomeView: View {
                         }
                         .padding(.vertical, 18)
                     } else {
-                        VStack(spacing: 0) {
-                            HStack {
-                                Text("Nombre")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                Text("Fecha de acceso")
-                                    .frame(width: 150, alignment: .leading)
-                                Text("Ubicación")
-                                    .frame(width: 240, alignment: .leading)
-                            }
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-
-                            Divider()
-
-                            ForEach(quickAccess.recentFiles) { record in
-                                if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
-                                    recentFileRow(item: fileItem, accessedAt: record.accessedAt)
+                        switch tab.viewMode {
+                        case .extraLargeIcons, .largeIcons, .mediumIcons:
+                            let cellWidth = tab.viewMode.gridCellWidth
+                            let gridCols = [GridItem(.adaptive(minimum: cellWidth, maximum: cellWidth + 24), spacing: 10)]
+                            LazyVGrid(columns: gridCols, alignment: .leading, spacing: 12) {
+                                ForEach(quickAccess.recentFiles) { record in
+                                    if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
+                                        Win11GridItemCell(
+                                            windowVM: windowVM,
+                                            tab: tab,
+                                            item: fileItem,
+                                            isCut: windowVM.clipboard.isItemCut(fileItem.url)
+                                        )
+                                    }
                                 }
                             }
+                            .padding(.top, 8)
+
+                        case .list:
+                            let listCols = [GridItem(.adaptive(minimum: 230, maximum: 280), spacing: 8)]
+                            LazyVGrid(columns: listCols, alignment: .leading, spacing: 4) {
+                                ForEach(quickAccess.recentFiles) { record in
+                                    if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
+                                        Win11ListItemRow(
+                                            windowVM: windowVM,
+                                            tab: tab,
+                                            item: fileItem,
+                                            isCut: windowVM.clipboard.isItemCut(fileItem.url)
+                                        )
+                                    }
+                                }
+                            }
+                            .padding(.top, 8)
+
+                        case .details:
+                            VStack(spacing: 0) {
+                                HStack {
+                                    Text("Nombre")
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Text("Fecha de acceso")
+                                        .frame(width: 150, alignment: .leading)
+                                    Text("Ubicación")
+                                        .frame(width: 240, alignment: .leading)
+                                }
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+
+                                Divider()
+
+                                ForEach(quickAccess.recentFiles) { record in
+                                    if let fileItem = FileSystemService.shared.makeFileItem(from: record.url) {
+                                        recentFileRow(item: fileItem, accessedAt: record.accessedAt)
+                                    }
+                                }
+                            }
+                            .padding(.top, 8)
                         }
-                        .padding(.top, 8)
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: 10) {
                         Text("Recientes")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.primary)
+
                         Spacer()
+
+                        // Quick view mode switcher buttons right in the Recientes section
+                        HStack(spacing: 2) {
+                            Button {
+                                tab.viewMode = .details
+                            } label: {
+                                Image(systemName: "tablecells")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(tab.viewMode == .details ? Win11Theme.accentBlue(colorScheme) : .secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(tab.viewMode == .details ? Win11Theme.selectionFill(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Detalles (lista con fecha y ubicación)")
+
+                            Button {
+                                tab.viewMode = .largeIcons
+                            } label: {
+                                Image(systemName: "square.grid.2x2")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle((tab.viewMode == .largeIcons || tab.viewMode == .extraLargeIcons || tab.viewMode == .mediumIcons) ? Win11Theme.accentBlue(colorScheme) : .secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background((tab.viewMode == .largeIcons || tab.viewMode == .extraLargeIcons || tab.viewMode == .mediumIcons) ? Win11Theme.selectionFill(colorScheme) : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Iconos grandes")
+                        }
+                        .padding(.trailing, 4)
+
                         if !quickAccess.recentFiles.isEmpty {
                             Button("Borrar historial") {
                                 quickAccess.clearRecents()
