@@ -172,4 +172,8 @@ public struct FileItem: Identifiable, Hashable, Sendable {
         df.dateFormat = "dd/MM/yyyy HH:mm"
         return df
     }()
+
+    public static func formatDate(_ date: Date) -> String {
+        win11DateFormatter.string(from: date)
+    }
 }

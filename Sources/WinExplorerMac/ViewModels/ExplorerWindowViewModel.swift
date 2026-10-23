@@ -41,9 +41,6 @@ public final class ExplorerWindowViewModel: ObservableObject {
         clipboard.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &serviceCancellables)
-        quickAccess.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &serviceCancellables)
         ThemeManager.shared.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &serviceCancellables)
@@ -135,8 +132,8 @@ public final class ExplorerWindowViewModel: ObservableObject {
             }
         } else {
             let tab = activeTab
-            if !item.isCloudDataless && !FileSystemService.isCloudPath(item.url.path) {
-                quickAccess.recordRecentFile(item.url)
+            DispatchQueue.main.async { [weak self] in
+                self?.quickAccess.recordRecentFile(item.url)
             }
             FileSystemService.shared.openFileItem(
                 item,

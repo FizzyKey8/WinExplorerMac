@@ -172,12 +172,12 @@ public struct Win11HomeView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(item.formattedModificationDate)
+            Text(item.modificationDate.map { FileItem.formatDate($0) } ?? FileItem.formatDate(accessedAt))
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .frame(width: 150, alignment: .leading)
 
-            Text(item.parentPath)
+            Text(displayLocation(for: item.url))
                 .font(.system(size: 11.5))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -202,5 +202,33 @@ public struct Win11HomeView: View {
                 }
             )
         )
+    }
+
+    private func displayLocation(for url: URL) -> String {
+        let parent = url.deletingLastPathComponent().cleanFileURL
+        let home = FileManager.default.homeDirectoryForCurrentUser.cleanFileURL
+        if parent.path == FileSystemService.iCloudDriveURL.path {
+            return "iCloud Drive"
+        }
+        if parent.path.hasPrefix(FileSystemService.iCloudDriveURL.path) {
+            let relative = String(parent.path.dropFirst(FileSystemService.iCloudDriveURL.path.count))
+            return "iCloud Drive" + relative
+        }
+        if parent.path.hasPrefix(FileSystemService.cloudStorageRootURL.path) {
+            let relative = String(parent.path.dropFirst(FileSystemService.cloudStorageRootURL.path.count + 1))
+            let parts = relative.split(separator: "/", maxSplits: 1).map(String.init)
+            if let provider = parts.first {
+                let friendlyName = FileSystemService.parseCloudProviderFolderName(provider).name
+                if parts.count > 1 {
+                    return "\(friendlyName) > \(parts[1])"
+                }
+                return friendlyName
+            }
+        }
+        if parent.path.hasPrefix(home.path) {
+            let relative = String(parent.path.dropFirst(home.path.count))
+            return "~" + relative
+        }
+        return parent.path
     }
 }

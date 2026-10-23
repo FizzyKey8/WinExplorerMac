@@ -83,10 +83,15 @@ public final class QuickAccessStore: ObservableObject {
 
     public func recordRecentFile(_ url: URL) {
         let std = url.cleanFileURL
-        // Never record or stat files inside cloud storage vnodes to avoid FileProvider kernel blocks
-        guard !FileSystemService.isCloudPath(std.path) else { return }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: std.path, isDirectory: &isDir), !isDir.boolValue else { return }
+        if FileSystemService.isCloudPath(std.path) {
+            // Never stat or touch CloudStorage VFS nodes directly to avoid kernel hangs
+            if std.hasDirectoryPath { return }
+        } else {
+            var st = Darwin.stat()
+            guard lstat(std.path, &st) == 0 else { return }
+            let isDir = (st.st_mode & S_IFMT) == S_IFDIR
+            guard !isDir else { return }
+        }
 
         recentFiles.removeAll { $0.path == std.path }
         recentFiles.insert(RecentFileRecord(path: std.path, accessedAt: Date()), at: 0)
@@ -181,8 +186,12 @@ public final class QuickAccessStore: ObservableObject {
     private func loadRecentFiles() {
         if let data = UserDefaults.standard.data(forKey: recentsKey),
            let decoded = try? JSONDecoder().decode([RecentFileRecord].self, from: data) {
-            self.recentFiles = decoded.filter {
-                !FileSystemService.isCloudPath($0.path) && FileManager.default.fileExists(atPath: $0.path)
+            self.recentFiles = decoded.filter { record in
+                if FileSystemService.isCloudPath(record.path) {
+                    return !record.path.hasSuffix("/")
+                }
+                var isDir: ObjCBool = false
+                return FileManager.default.fileExists(atPath: record.path, isDirectory: &isDir) && !isDir.boolValue
             }
         }
     }

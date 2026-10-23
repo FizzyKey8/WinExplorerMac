@@ -144,6 +144,16 @@ public struct Win11ContextMenuOverlay: View {
                 }
                 .menuStyle(.borderlessButton)
             }
+
+            if windowVM.quickAccess.recentFiles.contains(where: { $0.path == item.url.cleanFileURL.path }) {
+                contextMenuRow(
+                    title: "Quitar de recientes",
+                    symbol: "clock.badge.xmark"
+                ) {
+                    windowVM.quickAccess.removeRecentFile(item.url)
+                    windowVM.dismissContextMenu()
+                }
+            }
         }
 
         let isCloud = FileSystemService.isCloudPath(item.url.path) || item.isCloudDataless || item.cloudFileId != nil

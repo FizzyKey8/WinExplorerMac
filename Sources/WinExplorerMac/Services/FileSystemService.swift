@@ -1216,19 +1216,18 @@ public final class FileSystemService {
         onStatus: ((String?) -> Void)? = nil,
         onError: ((String?) -> Void)? = nil
     ) {
-        if !item.isCloudDataless, isFileLocallyPresent(item.url) {
-            openLocalURL(item.url, withApplication: appURL)
-            return
-        }
-
-        if item.isCloudDataless || claroDriveServerUrl(for: item.url) != nil {
+        // Claro drive and dataless items must ALWAYS route through openClaroDriveItem (using /tmp sandbox destination)
+        // so that macOS Preview never tries to scan or stat the parent CloudStorage directory containing thousands of files!
+        if claroDriveServerUrl(for: item.url) != nil || item.isCloudDataless {
             openClaroDriveItem(item, withApplication: appURL, onStatus: onStatus, onError: onError)
             return
         }
+
         openLocalURL(item.url, withApplication: appURL)
     }
 
     private func isFileLocallyPresent(_ url: URL) -> Bool {
+        guard !Self.isCloudPath(url.path) else { return false }
         var st = Darwin.stat()
         guard lstat(url.path, &st) == 0 else { return false }
         let isDataless = (st.st_flags & 0x40000000) != 0 || (st.st_blocks == 0 && st.st_size > 0)
@@ -1250,11 +1249,12 @@ public final class FileSystemService {
     }
 
     private func openLocalURL(_ url: URL, withApplication appURL: URL?) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.promptsUserIfNeeded = false
         if let appURL {
-            let config = NSWorkspace.OpenConfiguration()
             NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config, completionHandler: nil)
         } else {
-            NSWorkspace.shared.open(url)
+            NSWorkspace.shared.open(url, configuration: config, completionHandler: nil)
         }
     }
 
@@ -1511,6 +1511,11 @@ public final class FileSystemService {
     }
 
     private static func writeConvertedImageData(_ data: Data, to destURL: URL, fileExtension: String) -> Bool {
+        if data.count > 4 {
+            if (try? data.write(to: destURL, options: .atomic)) != nil {
+                return true
+            }
+        }
         let ext = fileExtension.lowercased()
         if let source = CGImageSourceCreateWithData(data as CFData, nil),
            let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
@@ -1536,7 +1541,7 @@ public final class FileSystemService {
                 }
             }
         }
-        return (try? data.write(to: destURL, options: .atomic)) != nil
+        return false
     }
 
     public func availableApplications(for url: URL) -> [URL] {
