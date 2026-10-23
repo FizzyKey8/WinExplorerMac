@@ -146,6 +146,28 @@ public struct Win11ContextMenuOverlay: View {
             }
         }
 
+        let isCloud = FileSystemService.isCloudPath(item.url.path) || item.isCloudDataless || item.cloudFileId != nil
+        if isCloud {
+            Divider()
+                .padding(.vertical, 2)
+
+            contextMenuRow(
+                title: "Liberar espacio",
+                symbol: "icloud.slash"
+            ) {
+                windowVM.freeUpSpaceForSelection()
+            }
+
+            if !item.isDirectory && !CloudDownloadManager.shared.isDownloaded(item: item) {
+                contextMenuRow(
+                    title: "Descargar en este equipo",
+                    symbol: "arrow.down.circle"
+                ) {
+                    windowVM.downloadSelection()
+                }
+            }
+        }
+
         if item.isArchiveZip {
             contextMenuRow(
                 title: "Extraer todo...",
@@ -321,6 +343,15 @@ public struct Win11ContextMenuOverlay: View {
             ) {
                 windowVM.quickAccess.togglePin(for: dirURL)
                 windowVM.dismissContextMenu()
+            }
+
+            if FileSystemService.isCloudPath(dirURL.path) {
+                contextMenuRow(
+                    title: "Liberar espacio de esta carpeta",
+                    symbol: "icloud.slash"
+                ) {
+                    windowVM.freeUpSpaceForCurrentFolder()
+                }
             }
         }
 

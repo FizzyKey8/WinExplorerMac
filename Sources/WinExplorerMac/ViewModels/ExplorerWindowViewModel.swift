@@ -265,6 +265,64 @@ public final class ExplorerWindowViewModel: ObservableObject {
         picker.show(relativeTo: .zero, of: contentView, preferredEdge: .minY)
     }
 
+    // MARK: - Cloud Storage Free Up Space / Download
+    public func freeUpSpaceForSelection() {
+        activeContextMenu = nil
+        let tab = activeTab
+        let items = tab.selectedFileItems
+        guard !items.isEmpty else { return }
+
+        // Instantly transition badges to blue cloud (0ms delay, no beachball)
+        CloudDownloadManager.shared.evictAll(items: items)
+        tab.statusMessage = "Liberando espacio de \(items.count) elemento(s)..."
+
+        Task.detached(priority: .userInitiated) {
+            for item in items {
+                try? FileSystemService.shared.freeUpCloudSpace(at: item.url)
+            }
+            await MainActor.run {
+                tab.statusMessage = "Espacio liberado. Los archivos están en la nube."
+            }
+        }
+    }
+
+    public func freeUpSpaceForCurrentFolder() {
+        activeContextMenu = nil
+        let tab = activeTab
+        guard let dir = tab.currentDirectoryURL else { return }
+
+        // Instantly transition all items in current folder to blue cloud
+        CloudDownloadManager.shared.evictAll(items: tab.items)
+        tab.statusMessage = "Liberando espacio de esta carpeta..."
+
+        Task.detached(priority: .userInitiated) {
+            try? FileSystemService.shared.freeUpCloudSpace(at: dir)
+            await MainActor.run {
+                tab.statusMessage = "Espacio liberado para toda la carpeta."
+            }
+        }
+    }
+
+    public func downloadSelection() {
+        activeContextMenu = nil
+        let tab = activeTab
+        let items = tab.selectedFileItems.filter { !CloudDownloadManager.shared.isDownloaded(item: $0) }
+        guard !items.isEmpty else { return }
+
+        for item in items {
+            FileSystemService.shared.openFileItem(
+                item,
+                withApplication: nil,
+                onStatus: { [weak tab] msg in
+                    tab?.statusMessage = msg
+                },
+                onError: { [weak tab] err in
+                    tab?.errorMessage = err
+                }
+            )
+        }
+    }
+
     // MARK: - Context Menu Trigger
     public func presentContextMenu(for item: FileItem?, at location: CGPoint) {
         if let item {

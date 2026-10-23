@@ -1203,6 +1203,12 @@ public final class FileSystemService {
         }
     }
 
+    // MARK: - Free Up Space (Evict Ubiquitous Cloud Items)
+    public func freeUpCloudSpace(at url: URL) throws {
+        // macOS FileProvider handles single files and entire folder trees natively in one call
+        try fileManager.evictUbiquitousItem(at: url)
+    }
+
     // MARK: - Open / Reveal / Terminal / Share
     public func openFileItem(
         _ item: FileItem,
