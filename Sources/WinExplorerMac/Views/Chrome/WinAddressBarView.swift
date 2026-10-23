@@ -46,11 +46,14 @@ public struct Win11AddressBarView: View {
                     }
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .frame(width: 18, height: 28)
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle((tab.backStack.isEmpty && tab.forwardStack.isEmpty) ? Color.secondary.opacity(0.4) : Color.primary)
+                        .frame(width: 16, height: 28)
+                        .contentShape(Rectangle())
                 }
+                .menuIndicator(.hidden)
                 .menuStyle(.borderlessButton)
-                .frame(width: 20)
+                .fixedSize()
                 .help("Ubicaciones recientes")
 
                 navIconButton(
