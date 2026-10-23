@@ -7,6 +7,7 @@ public struct Win11ThisPCView: View {
 
     @State private var isFoldersExpanded: Bool = true
     @State private var isDrivesExpanded: Bool = true
+    @State private var isCloudExpanded: Bool = true
 
     private let folderColumns = [
         GridItem(.adaptive(minimum: 200, maximum: 240), spacing: 12)
@@ -40,7 +41,27 @@ public struct Win11ThisPCView: View {
 
                 Divider()
 
-                // 2. Carpetas del usuario (Desktop, Downloads, Documents, Pictures, Music, Videos)
+                // 2. Almacenamiento en la nube (iCloud Drive, Claro drive, etc.)
+                if !windowVM.cloudDrives.isEmpty {
+                    DisclosureGroup(isExpanded: $isCloudExpanded) {
+                        LazyVGrid(columns: folderColumns, alignment: .leading, spacing: 12) {
+                            ForEach(windowVM.cloudDrives) { cloud in
+                                if let item = FileSystemService.shared.makeFileItem(from: cloud.url, customDisplayName: cloud.name) {
+                                    systemFolderCard(item: item, title: cloud.name, subtitle: cloud.subtitle)
+                                }
+                            }
+                        }
+                        .padding(.top, 12)
+                    } label: {
+                        Text("Almacenamiento en la nube (\(windowVM.cloudDrives.count))")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
+
+                    Divider()
+                }
+
+                // 3. Carpetas del usuario (Desktop, Downloads, Documents, Pictures, Music, Videos)
                 DisclosureGroup(isExpanded: $isFoldersExpanded) {
                     LazyVGrid(columns: folderColumns, alignment: .leading, spacing: 12) {
                         ForEach(windowVM.quickAccess.pinnedFolders) { folder in
@@ -135,7 +156,7 @@ public struct Win11ThisPCView: View {
         )
     }
 
-    private func systemFolderCard(item: FileItem, title: String) -> some View {
+    private func systemFolderCard(item: FileItem, title: String, subtitle: String = "Carpeta del sistema") -> some View {
         let isSelected = tab.selectedURLs.contains(item.url)
 
         return HStack(spacing: 12) {
@@ -144,9 +165,10 @@ public struct Win11ThisPCView: View {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
-                Text("Carpeta del sistema")
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
         }

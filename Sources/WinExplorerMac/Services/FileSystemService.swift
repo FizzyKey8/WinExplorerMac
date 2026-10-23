@@ -22,6 +22,108 @@ public final class FileSystemService {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".Trash").standardizedFileURL
     }
 
+    public static var mobileDocumentsRootURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents")
+            .standardizedFileURL
+    }
+
+    public static var iCloudDriveURL: URL {
+        mobileDocumentsRootURL
+            .appendingPathComponent("com~apple~CloudDocs")
+            .standardizedFileURL
+    }
+
+    public static var cloudStorageRootURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/CloudStorage")
+            .standardizedFileURL
+    }
+
+    public static let iCloudAppContainers: [(container: String, title: String)] = [
+        ("com~apple~Pages", "Pages"),
+        ("com~apple~Numbers", "Numbers"),
+        ("com~apple~Keynote", "Keynote"),
+        ("com~apple~Preview", "Vista Previa"),
+        ("com~apple~TextEdit", "TextEdit"),
+        ("com~apple~QuickTimePlayerX", "QuickTime Player"),
+        ("com~apple~Automator", "Automator"),
+        ("com~apple~ScriptEditor2", "Editor de Scripts"),
+        ("iCloud~is~workflow~my~workflows", "Atajos"),
+        ("F6266T9T75~com~apple~iMovie", "iMovie"),
+        ("F3LWYJ7GM7~com~apple~garageband10", "GarageBand"),
+        ("iCloud~com~clarodrive", "Claro drive (iCloud)")
+    ]
+
+    public static func parseCloudProviderFolderName(_ folderName: String) -> (name: String, subtitle: String, isClaro: Bool) {
+        let lower = folderName.lowercased()
+        if lower.hasPrefix("clarodrive") {
+            let parts = folderName.split(separator: "-", maxSplits: 1)
+            let acct = parts.count > 1 ? String(parts[1]) : "Almacenamiento en la nube"
+            return ("Claro drive", acct, true)
+        } else if lower.hasPrefix("onedrive") {
+            let parts = folderName.split(separator: "-", maxSplits: 1)
+            let acct = parts.count > 1 ? String(parts[1]) : "Microsoft OneDrive"
+            return ("OneDrive", acct, false)
+        } else if lower.hasPrefix("googledrive") || lower.hasPrefix("google drive") {
+            let parts = folderName.split(separator: "-", maxSplits: 1)
+            let acct = parts.count > 1 ? String(parts[1]) : "Google Drive"
+            return ("Google Drive", acct, false)
+        } else if lower.hasPrefix("dropbox") {
+            return ("Dropbox", "Almacenamiento en la nube", false)
+        } else if lower.hasPrefix("box") {
+            return ("Box", "Almacenamiento en la nube", false)
+        } else {
+            return (folderName, "Almacenamiento en la nube", false)
+        }
+    }
+
+    public func cloudDrives() -> [CloudDriveInfo] {
+        var drives: [CloudDriveInfo] = []
+
+        // 1. iCloud Drive
+        let icloudURL = Self.iCloudDriveURL
+        if fileManager.fileExists(atPath: icloudURL.path) || fileManager.fileExists(atPath: Self.mobileDocumentsRootURL.path) {
+            drives.append(
+                CloudDriveInfo(
+                    url: icloudURL,
+                    name: "iCloud Drive",
+                    subtitle: "Apple iCloud",
+                    sfSymbol: "icloud.fill",
+                    isClaroDrive: false,
+                    isICloud: true
+                )
+            )
+        }
+
+        // 2. Third-party CloudStorage providers (Claro drive, OneDrive, Google Drive, Dropbox, etc.)
+        let cloudRoot = Self.cloudStorageRootURL
+        if let entries = try? fileManager.contentsOfDirectory(
+            at: cloudRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for entry in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+                var isDir: ObjCBool = false
+                if fileManager.fileExists(atPath: entry.path, isDirectory: &isDir), isDir.boolValue {
+                    let parsed = Self.parseCloudProviderFolderName(entry.lastPathComponent)
+                    drives.append(
+                        CloudDriveInfo(
+                            url: entry,
+                            name: parsed.name,
+                            subtitle: parsed.subtitle,
+                            sfSymbol: "cloud.fill",
+                            isClaroDrive: parsed.isClaro,
+                            isICloud: false
+                        )
+                    )
+                }
+            }
+        }
+
+        return drives
+    }
+
     private init() {}
 
     // MARK: - List Directory Contents
@@ -31,18 +133,40 @@ public final class FileSystemService {
             options.insert(.skipsHiddenFiles)
         }
 
+        let stdURL = url.standardizedFileURL
+
         do {
             let urls = try fileManager.contentsOfDirectory(
-                at: url,
+                at: stdURL,
                 includingPropertiesForKeys: Array(resourceKeys),
                 options: options
             )
 
-            return urls.compactMap { itemURL in
+            var items = urls.compactMap { itemURL in
                 makeFileItem(from: itemURL)
             }
+
+            // When viewing iCloud Drive root, also surface iCloud app Documents folders just like macOS Finder
+            if stdURL == Self.iCloudDriveURL {
+                let existingNames = Set(items.map { $0.name.lowercased() })
+                for (container, title) in Self.iCloudAppContainers {
+                    guard !existingNames.contains(title.lowercased()) else { continue }
+                    let docsURL = Self.mobileDocumentsRootURL
+                        .appendingPathComponent(container)
+                        .appendingPathComponent("Documents")
+                        .standardizedFileURL
+                    var isDir: ObjCBool = false
+                    if fileManager.fileExists(atPath: docsURL.path, isDirectory: &isDir), isDir.boolValue {
+                        if let appFolderItem = makeFileItem(from: docsURL, customDisplayName: title) {
+                            items.append(appFolderItem)
+                        }
+                    }
+                }
+            }
+
+            return items
         } catch {
-            if url.standardizedFileURL == Self.trashDirectoryURL {
+            if stdURL == Self.trashDirectoryURL {
                 if let fallbackItems = listTrashViaFinder(includeHidden: includeHidden) {
                     return fallbackItems
                 }
@@ -116,7 +240,7 @@ public final class FileSystemService {
         proc.waitUntilExit()
     }
 
-    public func makeFileItem(from url: URL) -> FileItem? {
+    public func makeFileItem(from url: URL, customDisplayName: String? = nil) -> FileItem? {
         let stdURL = url.standardizedFileURL
         if stdURL == Self.trashDirectoryURL {
             return FileItem(
@@ -130,6 +254,21 @@ public final class FileSystemService {
                 modificationDate: nil,
                 lastAccessDate: nil,
                 fileTypeDescription: "Papelera de reciclaje",
+                posixPermissions: 0o700
+            )
+        }
+        if stdURL == Self.iCloudDriveURL {
+            return FileItem(
+                url: stdURL,
+                name: "iCloud Drive",
+                isDirectory: true,
+                isHidden: false,
+                isSymlink: false,
+                size: 0,
+                creationDate: nil,
+                modificationDate: nil,
+                lastAccessDate: nil,
+                fileTypeDescription: "Almacenamiento en la nube",
                 posixPermissions: 0o700
             )
         }
@@ -148,9 +287,18 @@ public final class FileSystemService {
         let typeDesc = values?.localizedTypeDescription
         let posix = (attrs?[.posixPermissions] as? Int) ?? 0o755
 
+        let resolvedName: String
+        if let customDisplayName {
+            resolvedName = customDisplayName
+        } else if stdURL.deletingLastPathComponent().standardizedFileURL == Self.cloudStorageRootURL {
+            resolvedName = Self.parseCloudProviderFolderName(stdURL.lastPathComponent).name
+        } else {
+            resolvedName = stdURL.lastPathComponent
+        }
+
         return FileItem(
             url: stdURL,
-            name: stdURL.lastPathComponent,
+            name: resolvedName,
             isDirectory: isDir,
             isHidden: isHidden,
             isSymlink: isSymlink,

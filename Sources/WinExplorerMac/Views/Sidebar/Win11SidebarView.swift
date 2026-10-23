@@ -6,6 +6,7 @@ public struct Win11SidebarView: View {
     @ObservedObject var quickAccess: QuickAccessStore
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var isCloudExpanded: Bool = true
     @State private var isQuickAccessExpanded: Bool = true
     @State private var isThisPCExpanded: Bool = true
 
@@ -35,7 +36,62 @@ public struct Win11SidebarView: View {
                 Divider()
                     .padding(.vertical, 6)
 
-                // 2. "Acceso rápido" (Quick Access / Pinned Folders)
+                // 2. "Nube" (iCloud Drive, Claro drive, OneDrive, Google Drive, etc.)
+                if !windowVM.cloudDrives.isEmpty {
+                    DisclosureGroup(isExpanded: $isCloudExpanded) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(windowVM.cloudDrives) { cloud in
+                                let dest = NavigationDestination.directory(cloud.url)
+                                sidebarRow(
+                                    title: cloud.name,
+                                    isSelected: tab.destination == dest,
+                                    indentation: 10,
+                                    leadingIcon: {
+                                        Win11FolderIconView(
+                                            size: 17,
+                                            badgeSymbol: cloud.sfSymbol,
+                                            badgeColor: cloud.isClaroDrive
+                                                ? Color(red: 0.88, green: 0.14, blue: 0.14)
+                                                : Color(red: 0.05, green: 0.52, blue: 0.95)
+                                        )
+                                    },
+                                    trailingIcon: nil
+                                ) {
+                                    tab.navigate(to: dest)
+                                }
+                                .contextMenu {
+                                    Button("Abrir \(cloud.name)") {
+                                        tab.navigate(to: dest)
+                                    }
+                                    Button("Abrir en una pestaña nueva") {
+                                        windowVM.createNewTab(at: dest, activate: true)
+                                    }
+                                    Divider()
+                                    Button("Mostrar en Finder") {
+                                        FileSystemService.shared.revealInFinder(cloud.url)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.top, 2)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "icloud.fill")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(Color(red: 0.05, green: 0.52, blue: 0.95))
+                            Text("Nube")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .padding(.horizontal, 6)
+
+                    Divider()
+                        .padding(.vertical, 6)
+                }
+
+                // 3. "Acceso rápido" (Quick Access / Pinned Folders)
                 DisclosureGroup(isExpanded: $isQuickAccessExpanded) {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(quickAccess.pinnedFolders) { pinned in

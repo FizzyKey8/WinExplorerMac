@@ -107,17 +107,29 @@ public final class QuickAccessStore: ObservableObject {
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         let trashPath = home.appendingPathComponent(".Trash").path
         let trashMigrationKey = "WinExplorerMac.TrashPinnedMigration.v1"
+        let cloudMigrationKey = "WinExplorerMac.CloudPinnedMigration.v1"
+        let detectedCloudDrives = FileSystemService.shared.cloudDrives()
 
         if let data = UserDefaults.standard.data(forKey: pinnedKey),
            let decoded = try? JSONDecoder().decode([PinnedFolderItem].self, from: data),
            !decoded.isEmpty {
             var valid = decoded.filter {
-                $0.path == trashPath || FileManager.default.fileExists(atPath: $0.path)
+                $0.path == trashPath ||
+                $0.path == FileSystemService.iCloudDriveURL.path ||
+                FileManager.default.fileExists(atPath: $0.path)
             }
             if !UserDefaults.standard.bool(forKey: trashMigrationKey) {
                 UserDefaults.standard.set(true, forKey: trashMigrationKey)
                 if !valid.contains(where: { $0.path == trashPath }) {
                     valid.append(PinnedFolderItem(path: trashPath, customTitle: "Basurero", isSystemDefault: true))
+                }
+            }
+            if !UserDefaults.standard.bool(forKey: cloudMigrationKey) {
+                UserDefaults.standard.set(true, forKey: cloudMigrationKey)
+                for drive in detectedCloudDrives {
+                    if !valid.contains(where: { $0.path == drive.url.path }) {
+                        valid.append(PinnedFolderItem(path: drive.url.path, customTitle: drive.name, isSystemDefault: true))
+                    }
                 }
             }
             if !valid.isEmpty {
@@ -138,14 +150,21 @@ public final class QuickAccessStore: ObservableObject {
             (".Trash", "Basurero")
         ]
 
-        self.pinnedFolders = defaults.compactMap { folderName, localizedName in
+        var initialPinned = defaults.compactMap { folderName, localizedName -> PinnedFolderItem? in
             let url = home.appendingPathComponent(folderName)
             if folderName != ".Trash" && !FileManager.default.fileExists(atPath: url.path) {
                 return nil
             }
             return PinnedFolderItem(path: url.path, customTitle: localizedName, isSystemDefault: true)
         }
+        for drive in detectedCloudDrives {
+            if !initialPinned.contains(where: { $0.path == drive.url.path }) {
+                initialPinned.append(PinnedFolderItem(path: drive.url.path, customTitle: drive.name, isSystemDefault: true))
+            }
+        }
+        self.pinnedFolders = initialPinned
         UserDefaults.standard.set(true, forKey: trashMigrationKey)
+        UserDefaults.standard.set(true, forKey: cloudMigrationKey)
         savePinnedFolders()
     }
 

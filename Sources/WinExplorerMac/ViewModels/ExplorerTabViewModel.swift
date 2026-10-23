@@ -141,8 +141,48 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         case .thisPC:
             return [("Este equipo", .thisPC)]
         case .directory(let url):
-            var segments: [(String, NavigationDestination)] = [("Este equipo", .thisPC)]
             let std = url.standardizedFileURL
+
+            // Check if inside iCloud Drive or a CloudStorage provider for clean Windows 11 cloud breadcrumbs
+            for cloud in FileSystemService.shared.cloudDrives() {
+                let cloudRoot = cloud.url.standardizedFileURL
+                if std.path == cloudRoot.path || std.path.hasPrefix(cloudRoot.path + "/") {
+                    var segments: [(String, NavigationDestination)] = [
+                        (cloud.name, .directory(cloudRoot))
+                    ]
+                    let relative = String(std.path.dropFirst(cloudRoot.path.count))
+                    let subComponents = relative.split(separator: "/").map(String.init)
+                    var runningURL = cloudRoot
+                    for sub in subComponents {
+                        runningURL = runningURL.appendingPathComponent(sub)
+                        segments.append((NavigationDestination.localizedFolderName(for: runningURL), .directory(runningURL)))
+                    }
+                    return segments
+                }
+            }
+
+            // Also check if inside an iCloud app container Documents folder
+            if std.path.hasPrefix(FileSystemService.mobileDocumentsRootURL.path + "/") {
+                var segments: [(String, NavigationDestination)] = [
+                    ("iCloud Drive", .directory(FileSystemService.iCloudDriveURL))
+                ]
+                let relative = String(std.path.dropFirst(FileSystemService.mobileDocumentsRootURL.path.count))
+                let parts = relative.split(separator: "/").map(String.init)
+                if parts.count >= 2 && parts[1] == "Documents" {
+                    let docsRoot = FileSystemService.mobileDocumentsRootURL
+                        .appendingPathComponent(parts[0])
+                        .appendingPathComponent("Documents")
+                    segments.append((NavigationDestination.localizedFolderName(for: docsRoot), .directory(docsRoot)))
+                    var runningURL = docsRoot
+                    for sub in parts.dropFirst(2) {
+                        runningURL = runningURL.appendingPathComponent(sub)
+                        segments.append((sub, .directory(runningURL)))
+                    }
+                    return segments
+                }
+            }
+
+            var segments: [(String, NavigationDestination)] = [("Este equipo", .thisPC)]
             let components = std.pathComponents
             var currentPath = ""
             for component in components {
@@ -197,6 +237,15 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             navigate(to: .directory(FileSystemService.trashDirectoryURL))
             return
         }
+        if ["icloud", "icloud drive"].contains(trimmed.lowercased()) {
+            navigate(to: .directory(FileSystemService.iCloudDriveURL))
+            return
+        }
+        if ["clarodrive", "claro drive"].contains(trimmed.lowercased()),
+           let claro = FileSystemService.shared.cloudDrives().first(where: { $0.isClaroDrive }) {
+            navigate(to: .directory(claro.url))
+            return
+        }
 
         let expanded = (trimmed as NSString).expandingTildeInPath
         let targetURL = URL(fileURLWithPath: expanded).standardizedFileURL
@@ -240,6 +289,12 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             let std = url.standardizedFileURL
             if std.path == "/" {
                 navigate(to: .thisPC)
+            } else if std == FileSystemService.iCloudDriveURL ||
+                      std.deletingLastPathComponent().standardizedFileURL == FileSystemService.cloudStorageRootURL {
+                navigate(to: .home)
+            } else if std.lastPathComponent == "Documents",
+                      std.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL == FileSystemService.mobileDocumentsRootURL {
+                navigate(to: .directory(FileSystemService.iCloudDriveURL))
             } else {
                 navigate(to: .directory(std.deletingLastPathComponent()))
             }

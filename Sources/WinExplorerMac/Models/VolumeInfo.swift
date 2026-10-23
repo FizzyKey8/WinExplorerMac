@@ -34,3 +34,30 @@ public struct VolumeInfo: Identifiable, Hashable {
         "\(name) (\(driveLetterBadge))"
     }
 }
+
+public struct CloudDriveInfo: Identifiable, Hashable {
+    public let id: URL
+    public let url: URL
+    public let name: String
+    public let subtitle: String
+    public let sfSymbol: String
+    public let isClaroDrive: Bool
+    public let isICloud: Bool
+
+    public init(
+        url: URL,
+        name: String,
+        subtitle: String,
+        sfSymbol: String = "cloud.fill",
+        isClaroDrive: Bool = false,
+        isICloud: Bool = false
+    ) {
+        self.id = url.standardizedFileURL
+        self.url = url.standardizedFileURL
+        self.name = name
+        self.subtitle = subtitle
+        self.sfSymbol = sfSymbol
+        self.isClaroDrive = isClaroDrive
+        self.isICloud = isICloud
+    }
+}

@@ -22,6 +22,7 @@ public final class ExplorerWindowViewModel: ObservableObject {
     @Published public var clipboard = FileClipboardService()
     @Published public var quickAccess = QuickAccessStore()
     @Published public var volumes: [VolumeInfo] = []
+    @Published public var cloudDrives: [CloudDriveInfo] = []
 
     // Custom Windows 11 Context Menu & Modals
     @Published public var activeContextMenu: ContextMenuRequest? = nil
@@ -62,6 +63,7 @@ public final class ExplorerWindowViewModel: ObservableObject {
 
     public func refreshVolumes() {
         volumes = FileSystemService.shared.mountedVolumes()
+        cloudDrives = FileSystemService.shared.cloudDrives()
     }
 
     // MARK: - Tab Management (Windows 11 Tabs)

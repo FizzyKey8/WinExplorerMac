@@ -254,6 +254,14 @@ public struct Win11ItemIconView: View {
             return ("film.fill", Color(red: 0.90, green: 0.45, blue: 0.15))
         } else if std == home.appendingPathComponent(".Trash") {
             return ("trash.fill", Color(red: 0.45, green: 0.50, blue: 0.58))
+        } else if std == FileSystemService.iCloudDriveURL {
+            return ("icloud.fill", Color(red: 0.05, green: 0.52, blue: 0.95))
+        } else if std.deletingLastPathComponent().standardizedFileURL == FileSystemService.cloudStorageRootURL {
+            let parsed = FileSystemService.parseCloudProviderFolderName(std.lastPathComponent)
+            if parsed.isClaro {
+                return ("cloud.fill", Color(red: 0.88, green: 0.14, blue: 0.14))
+            }
+            return ("cloud.fill", Color(red: 0.05, green: 0.52, blue: 0.95))
         }
         return nil
     }

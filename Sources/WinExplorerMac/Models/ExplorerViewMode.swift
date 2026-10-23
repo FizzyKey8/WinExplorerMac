@@ -99,6 +99,17 @@ public enum NavigationDestination: Equatable, Hashable {
         if std == home.appendingPathComponent("Music") { return "Música" }
         if std == home.appendingPathComponent("Movies") { return "Videos" }
         if std == home.appendingPathComponent(".Trash") { return "Basurero" }
+        if std == FileSystemService.iCloudDriveURL { return "iCloud Drive" }
+        if std.deletingLastPathComponent().standardizedFileURL == FileSystemService.cloudStorageRootURL {
+            return FileSystemService.parseCloudProviderFolderName(std.lastPathComponent).name
+        }
+        if std.lastPathComponent == "Documents",
+           std.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL == FileSystemService.mobileDocumentsRootURL {
+            let container = std.deletingLastPathComponent().lastPathComponent
+            if let match = FileSystemService.iCloudAppContainers.first(where: { $0.container == container }) {
+                return match.title
+            }
+        }
         return std.lastPathComponent.isEmpty ? "Macintosh HD" : std.lastPathComponent
     }
 }
