@@ -38,5 +38,9 @@
 	<string>WinExplorerMac necesita acceso a tus unidades externas para mostrarlas en Este Equipo.</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>WinExplorerMac necesita comunicarse con Finder para mostrar y vaciar los elementos del Basurero.</string>
+	<key>NSQuitAlwaysKeepsWindows</key>
+	<false/>
+	<key>ApplePersistenceIgnoreState</key>
+	<true/>
 </dict>
 </plist>

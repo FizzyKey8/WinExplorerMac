@@ -409,6 +409,7 @@ public final class FileSystemService {
         includeHidden: Bool,
         firstBatchSize: Int,
         subsequentBatchSize: Int,
+        directoriesOnly: Bool = false,
         forceRefreshSnapshot: Bool = false,
         onBatch: @escaping ([FileItem], Bool) -> Bool
     ) -> Bool {
@@ -451,7 +452,10 @@ public final class FileSystemService {
             var totalCount: Int = 0
 
             for candidateUrl in [serverUrl, serverUrl + " "] {
-                let predicate = NSPredicate(format: "serverUrl == %@ AND deleted == false", candidateUrl)
+                let format = directoriesOnly
+                    ? "serverUrl == %@ AND deleted == false AND directory == true"
+                    : "serverUrl == %@ AND deleted == false"
+                let predicate = NSPredicate(format: format, candidateUrl)
                 if let res = fnObjects(realm, selObjects, "RealmItemMetadata" as NSString, predicate) as? NSObject,
                    let impCount = class_getMethodImplementation(type(of: res), selCount) {
                     let fnCount = unsafeBitCast(impCount, to: CountFn.self)
@@ -493,6 +497,7 @@ public final class FileSystemService {
                         if !includeHidden && isHidden { continue }
 
                         let isDir = (obj.value(forKey: "directory") as? Bool) ?? false
+                        if directoriesOnly && !isDir { continue }
                         let downloaded = (obj.value(forKey: "downloaded") as? Bool) ?? false
                         let isCloudDataless = !isDir && !downloaded
                         let fileId = obj.value(forKey: "fileId") as? String
@@ -626,6 +631,7 @@ public final class FileSystemService {
         includeHidden: Bool,
         firstBatchSize: Int,
         subsequentBatchSize: Int,
+        directoriesOnly: Bool = false,
         onBatch: @escaping ([FileItem], Bool) -> Bool
     ) -> Bool {
         guard let creds = claroDriveCredentials(),
@@ -724,6 +730,7 @@ public final class FileSystemService {
             }
 
             let isDir = entry.isDirectory
+            if directoriesOnly && !isDir { continue }
             let itemURL = stdURL.appendingPathComponent(fileName, isDirectory: isDir)
             let item = FileItem(
                 url: itemURL,
@@ -823,6 +830,7 @@ public final class FileSystemService {
     public func streamContentsOfDirectory(
         at url: URL,
         includeHidden: Bool,
+        directoriesOnly: Bool = false,
         firstBatchSize: Int = 180,
         subsequentBatchSize: Int = 450,
         onBatch: @escaping ([FileItem], Bool) -> Bool
@@ -840,6 +848,7 @@ public final class FileSystemService {
                 includeHidden: includeHidden,
                 firstBatchSize: firstBatchSize,
                 subsequentBatchSize: subsequentBatchSize,
+                directoriesOnly: directoriesOnly,
                 forceRefreshSnapshot: false,
                 onBatch: onBatch
             ) {
@@ -853,6 +862,7 @@ public final class FileSystemService {
                 includeHidden: includeHidden,
                 firstBatchSize: firstBatchSize,
                 subsequentBatchSize: subsequentBatchSize,
+                directoriesOnly: directoriesOnly,
                 onBatch: onBatch
             ) {
                 return
@@ -892,6 +902,9 @@ public final class FileSystemService {
 
             if name == "." || name == ".." { continue }
             if !includeHidden && (name.hasPrefix(".") || name == "Icon\r") { continue }
+            if directoriesOnly && dType != UInt8(DT_DIR) && dType != UInt8(DT_UNKNOWN) && dType != UInt8(DT_LNK) {
+                continue
+            }
 
             if let item = makeFileItemFromStat(
                 parentURL: stdURL,
@@ -901,6 +914,7 @@ public final class FileSystemService {
                 isCloudDirectory: isCloudDir
             ) {
                 if !includeHidden && item.isHidden { continue }
+                if directoriesOnly && !item.isDirectory { continue }
                 batch.append(item)
                 if stdURL == Self.iCloudDriveURL {
                     existingNamesLower.insert(item.name.lowercased())
@@ -937,6 +951,26 @@ public final class FileSystemService {
     }
 
     // MARK: - List Directory Contents
+    public func firstLevelSubfolders(at url: URL) async -> [FileItem] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                var folders: [FileItem] = []
+                _ = try? Self.shared.streamContentsOfDirectory(
+                    at: url,
+                    includeHidden: false,
+                    directoriesOnly: true,
+                    firstBatchSize: 300,
+                    subsequentBatchSize: 600
+                ) { batch, _ in
+                    folders.append(contentsOf: batch.filter(\.isDirectory))
+                    return true
+                }
+                folders.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                continuation.resume(returning: folders)
+            }
+        }
+    }
+
     public func contentsOfDirectory(at url: URL, includeHidden: Bool) throws -> [FileItem] {
         var allItems: [FileItem] = []
         try streamContentsOfDirectory(
@@ -1048,7 +1082,7 @@ public final class FileSystemService {
                 posixPermissions: 0o700
             )
         }
-        if claroDriveServerUrl(for: stdURL) != nil {
+        if Self.isCloudPath(stdURL.path) || claroDriveServerUrl(for: stdURL) != nil {
             let isDir = stdURL.hasDirectoryPath || stdURL.pathExtension.isEmpty
             return FileItem(
                 url: stdURL,

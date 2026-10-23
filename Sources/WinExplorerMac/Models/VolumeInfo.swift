@@ -52,8 +52,9 @@ public struct CloudDriveInfo: Identifiable, Hashable {
         isClaroDrive: Bool = false,
         isICloud: Bool = false
     ) {
-        self.id = url.standardizedFileURL
-        self.url = url.standardizedFileURL
+        let clean = url.cleanFileURL
+        self.id = clean
+        self.url = clean
         self.name = name
         self.subtitle = subtitle
         self.sfSymbol = sfSymbol

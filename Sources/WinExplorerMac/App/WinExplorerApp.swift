@@ -10,6 +10,9 @@ public struct WinExplorerApp: App {
     public init() {
         // Guarantee macOS treats this as a regular desktop GUI application with a Dock icon
         NSApplication.shared.setActivationPolicy(.regular)
+        // Prevent macOS from showing the "se forzó su salida mientras volvía a abrir las ventanas" prompt
+        UserDefaults.standard.set(true, forKey: "ApplePersistenceIgnoreState")
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
     }
 
     public var body: some Scene {
@@ -103,16 +106,23 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             NSApplication.shared.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
+            var visibleCount = 0
             for window in NSApplication.shared.windows {
-                window.titleVisibility = .hidden
-                window.titlebarAppearsTransparent = true
-                window.styleMask.insert(.fullSizeContentView)
-                window.isMovableByWindowBackground = false
-                window.isReleasedWhenClosed = false
-                if Self.mainExplorerWindow == nil {
-                    Self.mainExplorerWindow = window
+                if window.className != "NSStatusBarWindow" {
+                    window.titleVisibility = .hidden
+                    window.titlebarAppearsTransparent = true
+                    window.styleMask.insert(.fullSizeContentView)
+                    window.isMovableByWindowBackground = false
+                    window.isReleasedWhenClosed = false
+                    if Self.mainExplorerWindow == nil {
+                        Self.mainExplorerWindow = window
+                    }
+                    window.makeKeyAndOrderFront(nil)
+                    visibleCount += 1
                 }
-                window.makeKeyAndOrderFront(nil)
+            }
+            if visibleCount == 0 {
+                NotificationCenter.default.post(name: .win11ReopenMainWindow, object: nil)
             }
         }
 

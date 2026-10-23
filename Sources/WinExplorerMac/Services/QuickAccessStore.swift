@@ -7,7 +7,7 @@ public struct PinnedFolderItem: Identifiable, Codable, Hashable {
     public let isSystemDefault: Bool
 
     public var url: URL {
-        URL(fileURLWithPath: path)
+        URL(fileURLWithPath: path, isDirectory: true)
     }
 
     public var title: String {
@@ -29,7 +29,7 @@ public struct RecentFileRecord: Identifiable, Codable, Hashable {
     public let accessedAt: Date
 
     public var url: URL {
-        URL(fileURLWithPath: path)
+        URL(fileURLWithPath: path, isDirectory: false)
     }
 }
 
@@ -125,6 +125,7 @@ public final class QuickAccessStore: ObservableObject {
             var valid = decoded.filter {
                 $0.path == trashPath ||
                 $0.path == FileSystemService.iCloudDriveURL.path ||
+                FileSystemService.isCloudPath($0.path) ||
                 FileManager.default.fileExists(atPath: $0.path)
             }
             if !UserDefaults.standard.bool(forKey: trashMigrationKey) {

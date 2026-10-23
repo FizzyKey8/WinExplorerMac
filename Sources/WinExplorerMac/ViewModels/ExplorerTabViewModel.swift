@@ -261,14 +261,14 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             for component in components {
                 if component == "/" {
                     currentPath = "/"
-                    segments.append(("Macintosh HD (C:)", .directory(URL(fileURLWithPath: "/"))))
+                    segments.append(("Macintosh HD (C:)", .directory(URL(fileURLWithPath: "/", isDirectory: true))))
                 } else {
                     if currentPath == "/" {
                         currentPath = "/\(component)"
                     } else {
                         currentPath += "/\(component)"
                     }
-                    let segURL = URL(fileURLWithPath: currentPath)
+                    let segURL = URL(fileURLWithPath: currentPath, isDirectory: true)
                     segments.append((NavigationDestination.localizedFolderName(for: segURL), .directory(segURL)))
                 }
             }
