@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ImageIO
+import AVFoundation
 import QuickLookThumbnailing
 
 private actor CloudPreviewConcurrencyLimiter {
@@ -69,12 +70,63 @@ public final class ThumbnailService {
 
         let maxPixelSize: Int = targetSize <= 28 ? 64 : (targetSize <= 64 ? 160 : 320)
 
-        // Cloud virtual image with Claro drive preview endpoint
+        // Cloud virtual items
         if item.isCloudDataless {
-            guard item.isImage, let fileId = item.cloudFileId, !fileId.isEmpty else {
+            guard (item.isImage || item.isVideo) else {
                 return nil
             }
-            return await loadClaroDrivePreview(fileId: fileId, maxPixelSize: maxPixelSize, cacheKey: key)
+            let cacheId = (item.cloudFileId?.isEmpty == false) ? item.cloudFileId! : String(abs(item.url.path.hashValue))
+
+            // 1. Check disk cache first
+            let diskFile = cloudPreviewCacheDir.appendingPathComponent("\(cacheId).img")
+            if FileManager.default.fileExists(atPath: diskFile.path),
+               let data = try? Data(contentsOf: diskFile),
+               let img = Self.generateImageThumbnailFromData(data, maxPixelSize: maxPixelSize) {
+                cache.setObject(img, forKey: key)
+                return img
+            }
+
+            // 2. Images: fetch high-speed preview from Claro drive
+            if item.isImage, let fileId = item.cloudFileId, !fileId.isEmpty {
+                if let img = await loadClaroDrivePreview(fileId: fileId, maxPixelSize: maxPixelSize, cacheKey: key) {
+                    return img
+                }
+            }
+
+            // 3. Videos: extract keyframe either from opened cache or directly over HTTP range requests
+            if item.isVideo {
+                // Check if already opened/downloaded in /tmp/WinExplorerMac_CloudOpened/<cacheId>/
+                let openedDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudOpened/\(cacheId)", isDirectory: true)
+                if let files = try? FileManager.default.contentsOfDirectory(at: openedDir, includingPropertiesForKeys: nil),
+                   let firstVid = files.first(where: { !["img", "txt"].contains($0.pathExtension.lowercased()) }) {
+                    if let generated = Self.generateVideoThumbnail(at: firstVid, maxPixelSize: maxPixelSize) {
+                        cache.setObject(generated, forKey: key)
+                        if let data = Self.jpegData(from: generated) {
+                            try? data.write(to: diskFile, options: .atomic)
+                        }
+                        return generated
+                    }
+                }
+
+                // Extract first keyframe directly over HTTP range requests using AVURLAsset
+                if let remoteURL = FileSystemService.shared.claroDriveEncodedWebDavURL(for: item.url),
+                   let creds = FileSystemService.shared.claroDriveCredentials() {
+                    let authData = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
+                    let headers: [String: String] = [
+                        "Authorization": "Basic \(authData)",
+                        "User-Agent": creds.userAgent
+                    ]
+                    if let generated = await Self.generateRemoteVideoThumbnail(remoteURL: remoteURL, headers: headers, maxPixelSize: maxPixelSize) {
+                        cache.setObject(generated, forKey: key)
+                        if let data = Self.jpegData(from: generated) {
+                            try? data.write(to: diskFile, options: .atomic)
+                        }
+                        return generated
+                    }
+                }
+            }
+
+            return nil
         }
 
         return await withCheckedContinuation { continuation in
@@ -144,7 +196,7 @@ public final class ThumbnailService {
 
     public func loadThumbnail(for item: FileItem, targetSize: CGFloat, completion: @escaping (NSImage?) -> Void) {
         if item.isCloudDataless {
-            if item.isImage, item.cloudFileId != nil {
+            if (item.isImage || item.isVideo) {
                 Task {
                     let loaded = await loadThumbnailAsync(for: item, targetSize: targetSize)
                     await MainActor.run {
@@ -175,27 +227,96 @@ public final class ThumbnailService {
                     completion(generated)
                 }
             }
-        } else if item.isQuickLookThumbnailSupported {
-            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-            let qlSize = CGSize(width: max(32, targetSize), height: max(32, targetSize))
-            let request = QLThumbnailGenerator.Request(
-                fileAt: fileURL,
-                size: qlSize,
-                scale: scale,
-                representationTypes: .thumbnail
-            )
-            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
-                let image = representation?.nsImage
-                if let image {
-                    self?.cache.setObject(image, forKey: key)
-                }
-                DispatchQueue.main.async {
-                    completion(image)
+        } else if item.isVideo {
+            workQueue.async { [weak self] in
+                if let generated = Self.generateVideoThumbnail(at: fileURL, maxPixelSize: maxPixelSize) {
+                    self?.cache.setObject(generated, forKey: key)
+                    DispatchQueue.main.async {
+                        completion(generated)
+                    }
+                } else {
+                    self?.generateQuickLookThumbnail(at: fileURL, targetSize: targetSize, key: key, completion: completion)
                 }
             }
+        } else if item.isQuickLookThumbnailSupported {
+            generateQuickLookThumbnail(at: fileURL, targetSize: targetSize, key: key, completion: completion)
         } else {
             completion(nil)
         }
+    }
+
+    private func generateQuickLookThumbnail(at fileURL: URL, targetSize: CGFloat, key: NSString, completion: @escaping (NSImage?) -> Void) {
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        let qlSize = CGSize(width: max(32, targetSize), height: max(32, targetSize))
+        let request = QLThumbnailGenerator.Request(
+            fileAt: fileURL,
+            size: qlSize,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] representation, _ in
+            let image = representation?.nsImage
+            if let image {
+                self?.cache.setObject(image, forKey: key)
+            }
+            DispatchQueue.main.async {
+                completion(image)
+            }
+        }
+    }
+
+    public static func generateVideoThumbnail(at url: URL, maxPixelSize: Int) -> NSImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: maxPixelSize * 2, height: maxPixelSize * 2)
+        generator.requestedTimeToleranceBefore = .positiveInfinity
+        generator.requestedTimeToleranceAfter = .positiveInfinity
+
+        let candidateTimes = [
+            CMTime(seconds: 1.0, preferredTimescale: 600),
+            CMTime(seconds: 0.1, preferredTimescale: 600),
+            CMTime.zero
+        ]
+        for time in candidateTimes {
+            if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
+                return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            }
+        }
+        return nil
+    }
+
+    private static func generateRemoteVideoThumbnail(remoteURL: URL, headers: [String: String], maxPixelSize: Int) async -> NSImage? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let asset = AVURLAsset(url: remoteURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+                let generator = AVAssetImageGenerator(asset: asset)
+                generator.appliesPreferredTrackTransform = true
+                generator.maximumSize = CGSize(width: maxPixelSize * 2, height: maxPixelSize * 2)
+                generator.requestedTimeToleranceBefore = .positiveInfinity
+                generator.requestedTimeToleranceAfter = .positiveInfinity
+
+                let candidateTimes = [
+                    CMTime(seconds: 1.0, preferredTimescale: 600),
+                    CMTime(seconds: 0.1, preferredTimescale: 600),
+                    CMTime.zero
+                ]
+                for time in candidateTimes {
+                    if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
+                        let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                        continuation.resume(returning: img)
+                        return
+                    }
+                }
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+
+    public static func jpegData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.88])
     }
 
     private static func generateImageThumbnailFromData(_ data: Data, maxPixelSize: Int) -> NSImage? {

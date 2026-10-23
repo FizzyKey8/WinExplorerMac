@@ -217,6 +217,20 @@ public struct Win11ItemIconView: View {
                         )
                         .shadow(color: Color.black.opacity(0.20), radius: max(1, size * 0.04), x: 0, y: 1)
 
+                    if item.isVideo && size >= 36 {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black.opacity(0.60))
+                                .frame(width: max(14, size * 0.28), height: max(14, size * 0.28))
+                            Image(systemName: "play.fill")
+                                .font(.system(size: max(6, size * 0.13), weight: .bold))
+                                .foregroundStyle(.white)
+                                .offset(x: 0.5)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                        .padding(max(2, size * 0.05))
+                    }
+
                     if item.isCloudDataless && size >= 28 {
                         Image(systemName: "icloud.and.arrow.down")
                             .font(.system(size: max(8, size * 0.22), weight: .semibold))
@@ -252,8 +266,8 @@ public struct Win11ItemIconView: View {
             }
         }
         .task(id: "\(item.url.path)|\(Int(size))") {
-            let canLoadCloudPreview = item.isCloudDataless && item.isImage && item.cloudFileId != nil
-            guard (!item.isCloudDataless && (item.isImage || item.isQuickLookThumbnailSupported)) || canLoadCloudPreview else {
+            let canLoadCloudPreview = item.isCloudDataless && (item.isImage || item.isVideo)
+            guard (!item.isCloudDataless && (item.isImage || item.isVideo || item.isQuickLookThumbnailSupported)) || canLoadCloudPreview else {
                 return
             }
             if let cached = ThumbnailService.shared.cachedThumbnail(for: item, targetSize: size) {

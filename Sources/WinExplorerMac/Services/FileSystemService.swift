@@ -336,7 +336,7 @@ public final class FileSystemService {
         return "https://\(host)/remote.php/dav/files/\(userId)\(relativePath)"
     }
 
-    private func claroDriveEncodedWebDavURL(for targetURL: URL) -> URL? {
+    public func claroDriveEncodedWebDavURL(for targetURL: URL) -> URL? {
         let stdPath = targetURL.cleanFileURL.path
         let cloudRootPath = Self.cloudStorageRootURL.path + "/"
         guard stdPath.hasPrefix(cloudRootPath) else { return nil }
@@ -357,7 +357,8 @@ public final class FileSystemService {
         let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%;+&"))
         let encodedSegments = components.dropFirst().compactMap { seg -> String? in
             if seg.isEmpty { return nil }
-            return seg.addingPercentEncoding(withAllowedCharacters: allowed) ?? seg
+            let nfc = seg.precomposedStringWithCanonicalMapping
+            return nfc.addingPercentEncoding(withAllowedCharacters: allowed) ?? nfc
         }
         let pathSuffix = encodedSegments.isEmpty ? "" : "/" + encodedSegments.joined(separator: "/")
         return URL(string: "https://\(host)/remote.php/dav/files/\(userId)\(pathSuffix)")
