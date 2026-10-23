@@ -20,7 +20,7 @@ private actor CloudPreviewConcurrencyLimiter {
 
     func release() {
         if !waiters.isEmpty {
-            let next = waiters.removeFirst()
+            let next = waiters.removeLast()
             next.resume()
         } else {
             active = max(0, active - 1)
@@ -117,20 +117,27 @@ public final class ThumbnailService {
         req.setValue("Basic \(auth)", forHTTPHeaderField: "Authorization")
         req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
 
-        do {
-            let (data, response) = try await cloudSession.data(for: req)
-            guard let http = response as? HTTPURLResponse,
-                  (200...299).contains(http.statusCode),
-                  !data.isEmpty else {
+        for attempt in 0..<2 {
+            if Task.isCancelled { return nil }
+            do {
+                let (data, response) = try await cloudSession.data(for: req)
+                if let http = response as? HTTPURLResponse {
+                    if (200...299).contains(http.statusCode), !data.isEmpty {
+                        try? data.write(to: diskFile, options: .atomic)
+                        if let img = Self.generateImageThumbnailFromData(data, maxPixelSize: maxPixelSize) {
+                            cache.setObject(img, forKey: cacheKey)
+                            return img
+                        }
+                        return nil
+                    } else if http.statusCode == 503 && attempt == 0 {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        continue
+                    }
+                }
+                return nil
+            } catch {
                 return nil
             }
-            try? data.write(to: diskFile, options: .atomic)
-            if let img = Self.generateImageThumbnailFromData(data, maxPixelSize: maxPixelSize) {
-                cache.setObject(img, forKey: cacheKey)
-                return img
-            }
-        } catch {
-            return nil
         }
         return nil
     }

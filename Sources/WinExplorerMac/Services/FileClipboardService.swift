@@ -22,21 +22,21 @@ public final class FileClipboardService: ObservableObject {
 
     public func copy(_ items: [URL]) {
         guard !items.isEmpty else { return }
-        self.urls = items.map { $0.standardizedFileURL }
+        self.urls = items.map { $0.cleanFileURL }
         self.mode = .copy
         writeToSystemPasteboard(items)
     }
 
     public func cut(_ items: [URL]) {
         guard !items.isEmpty else { return }
-        self.urls = items.map { $0.standardizedFileURL }
+        self.urls = items.map { $0.cleanFileURL }
         self.mode = .cut
         writeToSystemPasteboard(items)
     }
 
     public func isItemCut(_ url: URL) -> Bool {
         guard mode == .cut else { return false }
-        return urls.contains(url.standardizedFileURL)
+        return urls.contains(url.cleanFileURL)
     }
 
     public func currentItemsForPaste() -> (urls: [URL], isCut: Bool) {

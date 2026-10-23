@@ -128,8 +128,7 @@ public struct Win11ContextMenuOverlay: View {
                 Menu {
                     ForEach(Array(apps), id: \.self) { appURL in
                         Button(appURL.deletingPathExtension().lastPathComponent) {
-                            FileSystemService.shared.openItem(item.url, withApplication: appURL)
-                            windowVM.dismissContextMenu()
+                            windowVM.openItem(item, inNewTab: false, withApplication: appURL)
                         }
                     }
                 } label: {

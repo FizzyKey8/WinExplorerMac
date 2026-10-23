@@ -2,6 +2,21 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 
+public extension URL {
+    /// Purely lexical file URL normalization that never touches the filesystem or blocks on dataless CloudStorage vnodes.
+    var cleanFileURL: URL {
+        let rawPath = self.path
+        if rawPath.isEmpty || rawPath == "/" {
+            return URL(fileURLWithPath: "/", isDirectory: true)
+        }
+        var trimmed = rawPath
+        while trimmed.count > 1 && trimmed.hasSuffix("/") {
+            trimmed.removeLast()
+        }
+        return URL(fileURLWithPath: trimmed, isDirectory: self.hasDirectoryPath)
+    }
+}
+
 public struct FileItem: Identifiable, Hashable {
     public let id: URL
     public let url: URL
@@ -34,8 +49,9 @@ public struct FileItem: Identifiable, Hashable {
         isCloudDataless: Bool = false,
         cloudFileId: String? = nil
     ) {
-        self.id = url.standardizedFileURL
-        self.url = url.standardizedFileURL
+        let clean = URL(fileURLWithPath: url.path, isDirectory: isDirectory)
+        self.id = clean
+        self.url = clean
         self.name = name ?? url.lastPathComponent
         self.fileExtension = url.pathExtension.lowercased()
         self.isDirectory = isDirectory

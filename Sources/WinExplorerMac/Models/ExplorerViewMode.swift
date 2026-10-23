@@ -89,22 +89,22 @@ public enum NavigationDestination: Equatable, Hashable {
     }
 
     public static func localizedFolderName(for url: URL) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
-        let std = url.standardizedFileURL
-        if std == home { return std.lastPathComponent }
-        if std == home.appendingPathComponent("Desktop") { return "Escritorio" }
-        if std == home.appendingPathComponent("Downloads") { return "Descargas" }
-        if std == home.appendingPathComponent("Documents") { return "Documentos" }
-        if std == home.appendingPathComponent("Pictures") { return "Imágenes" }
-        if std == home.appendingPathComponent("Music") { return "Música" }
-        if std == home.appendingPathComponent("Movies") { return "Videos" }
-        if std == home.appendingPathComponent(".Trash") { return "Basurero" }
-        if std == FileSystemService.iCloudDriveURL { return "iCloud Drive" }
-        if std.deletingLastPathComponent().standardizedFileURL == FileSystemService.cloudStorageRootURL {
+        let home = FileManager.default.homeDirectoryForCurrentUser.cleanFileURL
+        let std = url.cleanFileURL
+        if std.path == home.path { return std.lastPathComponent }
+        if std.path == home.appendingPathComponent("Desktop", isDirectory: true).path { return "Escritorio" }
+        if std.path == home.appendingPathComponent("Downloads", isDirectory: true).path { return "Descargas" }
+        if std.path == home.appendingPathComponent("Documents", isDirectory: true).path { return "Documentos" }
+        if std.path == home.appendingPathComponent("Pictures", isDirectory: true).path { return "Imágenes" }
+        if std.path == home.appendingPathComponent("Music", isDirectory: true).path { return "Música" }
+        if std.path == home.appendingPathComponent("Movies", isDirectory: true).path { return "Videos" }
+        if std.path == home.appendingPathComponent(".Trash", isDirectory: true).path { return "Basurero" }
+        if std.path == FileSystemService.iCloudDriveURL.path { return "iCloud Drive" }
+        if std.deletingLastPathComponent().cleanFileURL.path == FileSystemService.cloudStorageRootURL.path {
             return FileSystemService.parseCloudProviderFolderName(std.lastPathComponent).name
         }
         if std.lastPathComponent == "Documents",
-           std.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL == FileSystemService.mobileDocumentsRootURL {
+           std.deletingLastPathComponent().deletingLastPathComponent().cleanFileURL.path == FileSystemService.mobileDocumentsRootURL.path {
             let container = std.deletingLastPathComponent().lastPathComponent
             if let match = FileSystemService.iCloudAppContainers.first(where: { $0.container == container }) {
                 return match.title

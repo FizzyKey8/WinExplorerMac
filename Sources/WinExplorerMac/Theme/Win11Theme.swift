@@ -267,25 +267,25 @@ public struct Win11ItemIconView: View {
     }
 
     private func specialFolderBadge(for url: URL) -> (symbol: String, color: Color)? {
-        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
-        let std = url.standardizedFileURL
-        if std == home.appendingPathComponent("Desktop") {
+        let home = FileManager.default.homeDirectoryForCurrentUser.cleanFileURL
+        let std = url.cleanFileURL
+        if std.path == home.appendingPathComponent("Desktop", isDirectory: true).path {
             return ("menubar.dock.rectangle", Color(red: 0.05, green: 0.52, blue: 0.88))
-        } else if std == home.appendingPathComponent("Downloads") {
+        } else if std.path == home.appendingPathComponent("Downloads", isDirectory: true).path {
             return ("arrow.down", Color(red: 0.08, green: 0.65, blue: 0.45))
-        } else if std == home.appendingPathComponent("Documents") {
+        } else if std.path == home.appendingPathComponent("Documents", isDirectory: true).path {
             return ("doc.text.fill", Color(red: 0.18, green: 0.48, blue: 0.85))
-        } else if std == home.appendingPathComponent("Pictures") {
+        } else if std.path == home.appendingPathComponent("Pictures", isDirectory: true).path {
             return ("photo.fill", Color(red: 0.62, green: 0.32, blue: 0.85))
-        } else if std == home.appendingPathComponent("Music") {
+        } else if std.path == home.appendingPathComponent("Music", isDirectory: true).path {
             return ("music.note", Color(red: 0.92, green: 0.28, blue: 0.48))
-        } else if std == home.appendingPathComponent("Movies") {
+        } else if std.path == home.appendingPathComponent("Movies", isDirectory: true).path {
             return ("film.fill", Color(red: 0.90, green: 0.45, blue: 0.15))
-        } else if std == home.appendingPathComponent(".Trash") {
+        } else if std.path == home.appendingPathComponent(".Trash", isDirectory: true).path {
             return ("trash.fill", Color(red: 0.45, green: 0.50, blue: 0.58))
-        } else if std == FileSystemService.iCloudDriveURL {
+        } else if std.path == FileSystemService.iCloudDriveURL.path {
             return ("icloud.fill", Color(red: 0.05, green: 0.52, blue: 0.95))
-        } else if std.deletingLastPathComponent().standardizedFileURL == FileSystemService.cloudStorageRootURL {
+        } else if std.deletingLastPathComponent().cleanFileURL.path == FileSystemService.cloudStorageRootURL.path {
             let parsed = FileSystemService.parseCloudProviderFolderName(std.lastPathComponent)
             if parsed.isClaro {
                 return ("cloud.fill", Color(red: 0.88, green: 0.14, blue: 0.14))

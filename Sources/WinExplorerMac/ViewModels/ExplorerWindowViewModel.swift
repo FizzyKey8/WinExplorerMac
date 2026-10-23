@@ -122,7 +122,7 @@ public final class ExplorerWindowViewModel: ObservableObject {
     }
 
     // MARK: - File Operations on Active Tab
-    public func openItem(_ item: FileItem, inNewTab: Bool = false) {
+    public func openItem(_ item: FileItem, inNewTab: Bool = false, withApplication appURL: URL? = nil) {
         activeContextMenu = nil
         if item.isDirectory {
             if inNewTab {
@@ -131,8 +131,20 @@ public final class ExplorerWindowViewModel: ObservableObject {
                 activeTab.navigate(to: .directory(item.url))
             }
         } else {
-            quickAccess.recordRecentFile(item.url)
-            FileSystemService.shared.openItem(item.url)
+            let tab = activeTab
+            if !item.isCloudDataless && !FileSystemService.isCloudPath(item.url.path) {
+                quickAccess.recordRecentFile(item.url)
+            }
+            FileSystemService.shared.openFileItem(
+                item,
+                withApplication: appURL,
+                onStatus: { [weak tab] msg in
+                    tab?.statusMessage = msg
+                },
+                onError: { [weak tab] err in
+                    tab?.errorMessage = err
+                }
+            )
         }
     }
 

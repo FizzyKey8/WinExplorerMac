@@ -100,7 +100,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         case .thisPC:
             return true
         case .directory(let url):
-            return url.standardizedFileURL.path != "/"
+            return url.cleanFileURL.path != "/"
         }
     }
 
@@ -214,11 +214,11 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         case .thisPC:
             return [("Este equipo", .thisPC)]
         case .directory(let url):
-            let std = url.standardizedFileURL
+            let std = url.cleanFileURL
 
             // Check if inside iCloud Drive or a CloudStorage provider for clean Windows 11 cloud breadcrumbs
             for cloud in FileSystemService.shared.cloudDrives() {
-                let cloudRoot = cloud.url.standardizedFileURL
+                let cloudRoot = cloud.url.cleanFileURL
                 if std.path == cloudRoot.path || std.path.hasPrefix(cloudRoot.path + "/") {
                     var segments: [(String, NavigationDestination)] = [
                         (cloud.name, .directory(cloudRoot))
@@ -227,7 +227,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                     let subComponents = relative.split(separator: "/").map(String.init)
                     var runningURL = cloudRoot
                     for sub in subComponents {
-                        runningURL = runningURL.appendingPathComponent(sub)
+                        runningURL = runningURL.appendingPathComponent(sub, isDirectory: true)
                         segments.append((NavigationDestination.localizedFolderName(for: runningURL), .directory(runningURL)))
                     }
                     return segments
@@ -321,7 +321,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         }
 
         let expanded = (trimmed as NSString).expandingTildeInPath
-        let targetURL = URL(fileURLWithPath: expanded).standardizedFileURL
+        let targetURL = URL(fileURLWithPath: expanded, isDirectory: true).cleanFileURL
         if FileSystemService.isCloudPath(targetURL.path) && targetURL.pathExtension.isEmpty {
             navigate(to: .directory(targetURL))
             return
@@ -363,14 +363,14 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         case .thisPC:
             navigate(to: .home)
         case .directory(let url):
-            let std = url.standardizedFileURL
+            let std = url.cleanFileURL
             if std.path == "/" {
                 navigate(to: .thisPC)
             } else if std == FileSystemService.iCloudDriveURL ||
-                      std.deletingLastPathComponent().standardizedFileURL == FileSystemService.cloudStorageRootURL {
+                      std.deletingLastPathComponent().cleanFileURL == FileSystemService.cloudStorageRootURL {
                 navigate(to: .home)
             } else if std.lastPathComponent == "Documents",
-                      std.deletingLastPathComponent().deletingLastPathComponent().standardizedFileURL == FileSystemService.mobileDocumentsRootURL {
+                      std.deletingLastPathComponent().deletingLastPathComponent().cleanFileURL == FileSystemService.mobileDocumentsRootURL {
                 navigate(to: .directory(FileSystemService.iCloudDriveURL))
             } else {
                 navigate(to: .directory(std.deletingLastPathComponent()))
@@ -518,7 +518,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                             DispatchQueue.main.async { [weak self] in
                                 guard let self = self,
                                       case .directory(let currentURL) = self.destination,
-                                      currentURL.standardizedFileURL == url.standardizedFileURL else { return }
+                                      currentURL.cleanFileURL.path == url.cleanFileURL.path else { return }
                                 self.items = snapshot
                                 if isComplete || snapshot.count <= 800 {
                                     // If user changed sort/search while loading, re-evaluate with latest parameters
@@ -545,7 +545,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self,
                               case .directory(let currentURL) = self.destination,
-                              currentURL.standardizedFileURL == url.standardizedFileURL else { return }
+                              currentURL.cleanFileURL.path == url.cleanFileURL.path else { return }
                         self.isLoading = false
                         self.items = []
                         self.displayedItems = []

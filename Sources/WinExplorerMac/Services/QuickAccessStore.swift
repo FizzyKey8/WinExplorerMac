@@ -46,7 +46,7 @@ public final class QuickAccessStore: ObservableObject {
     }
 
     public func isPinned(_ url: URL) -> Bool {
-        let stdPath = url.standardizedFileURL.path
+        let stdPath = url.cleanFileURL.path
         return pinnedFolders.contains { $0.path == stdPath }
     }
 
@@ -59,10 +59,12 @@ public final class QuickAccessStore: ObservableObject {
     }
 
     public func pin(_ url: URL) {
-        let std = url.standardizedFileURL
+        let std = url.cleanFileURL
         guard !isPinned(std) else { return }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: std.path, isDirectory: &isDir), isDir.boolValue else { return }
+        if !FileSystemService.isCloudPath(std.path) {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: std.path, isDirectory: &isDir), isDir.boolValue else { return }
+        }
 
         let item = PinnedFolderItem(
             path: std.path,
@@ -74,13 +76,15 @@ public final class QuickAccessStore: ObservableObject {
     }
 
     public func unpin(_ url: URL) {
-        let stdPath = url.standardizedFileURL.path
+        let stdPath = url.cleanFileURL.path
         pinnedFolders.removeAll { $0.path == stdPath }
         savePinnedFolders()
     }
 
     public func recordRecentFile(_ url: URL) {
-        let std = url.standardizedFileURL
+        let std = url.cleanFileURL
+        // Never record or stat files inside cloud storage vnodes to avoid FileProvider kernel blocks
+        guard !FileSystemService.isCloudPath(std.path) else { return }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: std.path, isDirectory: &isDir), !isDir.boolValue else { return }
 
@@ -93,7 +97,7 @@ public final class QuickAccessStore: ObservableObject {
     }
 
     public func removeRecentFile(_ url: URL) {
-        let stdPath = url.standardizedFileURL.path
+        let stdPath = url.cleanFileURL.path
         recentFiles.removeAll { $0.path == stdPath }
         saveRecentFiles()
     }
@@ -177,7 +181,9 @@ public final class QuickAccessStore: ObservableObject {
     private func loadRecentFiles() {
         if let data = UserDefaults.standard.data(forKey: recentsKey),
            let decoded = try? JSONDecoder().decode([RecentFileRecord].self, from: data) {
-            self.recentFiles = decoded.filter { FileManager.default.fileExists(atPath: $0.path) }
+            self.recentFiles = decoded.filter {
+                !FileSystemService.isCloudPath($0.path) && FileManager.default.fileExists(atPath: $0.path)
+            }
         }
     }
 

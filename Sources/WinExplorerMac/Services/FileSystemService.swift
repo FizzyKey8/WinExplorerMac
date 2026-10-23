@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
 import Darwin
 import ObjectiveC
@@ -171,7 +172,7 @@ public final class FileSystemService {
     }
 
     // MARK: - Claro drive Direct Realm Metadata Reader & Preview Credentials
-    public struct ClaroDriveCredentials {
+    public struct ClaroDriveCredentials: Codable {
         public let userAgent: String
         public let user: String
         public let userId: String
@@ -181,14 +182,29 @@ public final class FileSystemService {
 
     private let credentialsLock = NSLock()
     private var cachedClaroCredentials: ClaroDriveCredentials? = nil
+    private let credentialsCacheFile = URL(fileURLWithPath: "/tmp/winexplorermac_clarodrive_creds.json", isDirectory: false)
+    private let cloudOpenSession: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 45
+        cfg.httpMaximumConnectionsPerHost = 4
+        return URLSession(configuration: cfg)
+    }()
 
     public func claroDriveCredentials() -> ClaroDriveCredentials? {
         credentialsLock.lock()
+        defer { credentialsLock.unlock() }
+
         if let existing = cachedClaroCredentials {
-            credentialsLock.unlock()
             return existing
         }
-        credentialsLock.unlock()
+
+        if let data = try? Data(contentsOf: credentialsCacheFile),
+           let decoded = try? JSONDecoder().decode(ClaroDriveCredentials.self, from: data),
+           !decoded.password.isEmpty {
+            cachedClaroCredentials = decoded
+            return decoded
+        }
 
         let containerRoot = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Group Containers/com.clarodrive")
@@ -264,9 +280,10 @@ public final class FileSystemService {
                         serverUrl: parts[3],
                         password: parts[4].trimmingCharacters(in: .whitespacesAndNewlines)
                     )
-                    credentialsLock.lock()
                     cachedClaroCredentials = creds
-                    credentialsLock.unlock()
+                    if let encoded = try? JSONEncoder().encode(creds) {
+                        try? encoded.write(to: credentialsCacheFile, options: .atomic)
+                    }
                     return creds
                 }
             }
@@ -292,7 +309,7 @@ public final class FileSystemService {
     private var lastRealmSnapshotPath: String? = nil
 
     private func claroDriveServerUrl(for directoryURL: URL) -> String? {
-        let stdPath = directoryURL.standardizedFileURL.path
+        let stdPath = directoryURL.cleanFileURL.path
         let cloudRootPath = Self.cloudStorageRootURL.path + "/"
         guard stdPath.hasPrefix(cloudRootPath) else { return nil }
 
@@ -317,6 +334,33 @@ public final class FileSystemService {
             relativePath = ""
         }
         return "https://\(host)/remote.php/dav/files/\(userId)\(relativePath)"
+    }
+
+    private func claroDriveEncodedWebDavURL(for targetURL: URL) -> URL? {
+        let stdPath = targetURL.cleanFileURL.path
+        let cloudRootPath = Self.cloudStorageRootURL.path + "/"
+        guard stdPath.hasPrefix(cloudRootPath) else { return nil }
+
+        let remainder = String(stdPath.dropFirst(cloudRootPath.count))
+        let components = remainder.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard let providerFolder = components.first,
+              providerFolder.lowercased().hasPrefix("clarodrive-") else {
+            return nil
+        }
+
+        let accountSpec = String(providerFolder.dropFirst("Clarodrive-".count))
+        let acctParts = accountSpec.split(separator: "@", maxSplits: 1).map(String.init)
+        guard acctParts.count == 2 else { return nil }
+        let userId = acctParts[0]
+        let host = acctParts[1]
+
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%;+&"))
+        let encodedSegments = components.dropFirst().compactMap { seg -> String? in
+            if seg.isEmpty { return nil }
+            return seg.addingPercentEncoding(withAllowedCharacters: allowed) ?? seg
+        }
+        let pathSuffix = encodedSegments.isEmpty ? "" : "/" + encodedSegments.joined(separator: "/")
+        return URL(string: "https://\(host)/remote.php/dav/files/\(userId)\(pathSuffix)")
     }
 
     private func prepareClaroDriveRealmSnapshot(forceRefresh: Bool = false) -> String? {
@@ -563,7 +607,7 @@ public final class FileSystemService {
         subsequentBatchSize: Int = 450,
         onBatch: @escaping ([FileItem], Bool) -> Bool
     ) throws {
-        let stdURL = url.standardizedFileURL
+        let stdURL = url.cleanFileURL
         let dirPath = stdURL.path
         let isCloudDir = Self.isCloudPath(dirPath)
 
@@ -739,7 +783,7 @@ public final class FileSystemService {
     }
 
     public func makeFileItem(from url: URL, customDisplayName: String? = nil) -> FileItem? {
-        let stdURL = url.standardizedFileURL
+        let stdURL = url.cleanFileURL
         if stdURL == Self.trashDirectoryURL {
             return FileItem(
                 url: stdURL,
@@ -770,7 +814,24 @@ public final class FileSystemService {
                 posixPermissions: 0o700
             )
         }
-        let parentURL = stdURL.deletingLastPathComponent().standardizedFileURL
+        if claroDriveServerUrl(for: stdURL) != nil {
+            let isDir = stdURL.hasDirectoryPath || stdURL.pathExtension.isEmpty
+            return FileItem(
+                url: stdURL,
+                name: customDisplayName ?? stdURL.lastPathComponent,
+                isDirectory: isDir,
+                isHidden: stdURL.lastPathComponent.hasPrefix("."),
+                isSymlink: false,
+                size: 0,
+                creationDate: nil,
+                modificationDate: nil,
+                lastAccessDate: nil,
+                fileTypeDescription: fastTypeDescription(forName: stdURL.lastPathComponent, isDirectory: isDir),
+                posixPermissions: 0o755,
+                isCloudDataless: !isDir
+            )
+        }
+        let parentURL = stdURL.deletingLastPathComponent().cleanFileURL
         let parentPath = parentURL.path
         let entryName = stdURL.lastPathComponent
         if let fastItem = makeFileItemFromStat(
@@ -909,65 +970,216 @@ public final class FileSystemService {
     }
 
     // MARK: - Open / Reveal / Terminal / Share
-    public func openItem(_ url: URL) {
-        if let webDavUrlStr = claroDriveServerUrl(for: url) {
-            var st = Darwin.stat()
-            let existsLocally = (lstat(url.path, &st) == 0) && ((st.st_flags & 0x40000000) == 0) && (st.st_blocks > 0)
-            if !existsLocally {
-                openClaroDriveRemoteFile(localURL: url, webDavUrlString: webDavUrlStr)
-                return
-            }
+    public func openFileItem(
+        _ item: FileItem,
+        withApplication appURL: URL? = nil,
+        onStatus: ((String?) -> Void)? = nil,
+        onError: ((String?) -> Void)? = nil
+    ) {
+        if item.isCloudDataless || claroDriveServerUrl(for: item.url) != nil {
+            openClaroDriveItem(item, withApplication: appURL, onStatus: onStatus, onError: onError)
+            return
         }
-        NSWorkspace.shared.open(url)
+        openLocalURL(item.url, withApplication: appURL)
     }
 
-    private func openClaroDriveRemoteFile(localURL: URL, webDavUrlString: String) {
-        let cacheDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudOpened", isDirectory: true)
-        try? fileManager.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-        let destURL = cacheDir.appendingPathComponent(localURL.lastPathComponent)
+    public func openItem(_ url: URL) {
+        if claroDriveServerUrl(for: url) != nil {
+            let syntheticItem = FileItem(
+                url: url,
+                name: url.lastPathComponent,
+                isDirectory: false,
+                isCloudDataless: true
+            )
+            openClaroDriveItem(syntheticItem, withApplication: nil, onStatus: nil, onError: nil)
+            return
+        }
+        openLocalURL(url, withApplication: nil)
+    }
+
+    private func openLocalURL(_ url: URL, withApplication appURL: URL?) {
+        if let appURL {
+            let config = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config, completionHandler: nil)
+        } else {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func openClaroDriveItem(
+        _ item: FileItem,
+        withApplication appURL: URL?,
+        onStatus: ((String?) -> Void)?,
+        onError: ((String?) -> Void)?
+    ) {
+        let baseCacheDir = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudOpened", isDirectory: true)
+        let folderKey: String = {
+            if let fid = item.cloudFileId, !fid.isEmpty {
+                return fid
+            }
+            return String(abs(item.url.path.hashValue))
+        }()
+        let itemCacheDir = baseCacheDir.appendingPathComponent(folderKey, isDirectory: true)
+        try? fileManager.createDirectory(at: itemCacheDir, withIntermediateDirectories: true)
+        let destURL = itemCacheDir.appendingPathComponent(item.name, isDirectory: false)
+
+        // 1. Instant open (< 1ms) if already in /tmp/WinExplorerMac_CloudOpened/<folderKey>/<name>
         if fileManager.fileExists(atPath: destURL.path) {
-            NSWorkspace.shared.open(destURL)
+            onStatus?(nil)
+            openLocalURL(destURL, withApplication: appURL)
             return
         }
 
+        // 2. Instant open (~20ms) if high-res preview /tmp/WinExplorerMac_CloudPreviews/<fileId>.img is already on disk
+        if item.isImage,
+           item.fileExtension != "gif",
+           let fileId = item.cloudFileId,
+           !fileId.isEmpty {
+            let previewDiskFile = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews/\(fileId).img", isDirectory: false)
+            if fileManager.fileExists(atPath: previewDiskFile.path),
+               let previewData = try? Data(contentsOf: previewDiskFile),
+               Self.writeConvertedImageData(previewData, to: destURL, fileExtension: item.fileExtension) {
+                onStatus?(nil)
+                openLocalURL(destURL, withApplication: appURL)
+                return
+            }
+        }
+
+        // 3. Download asynchronously via dedicated session (never touching FileProvider VFS)
+        onStatus?("Abriendo '\(item.name)' desde la nube...")
+        let fileId = item.cloudFileId
+        let isImage = item.isImage
+        let ext = item.fileExtension
+        let itemURL = item.url
+        let itemName = item.name
+
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self,
-                  let creds = self.claroDriveCredentials(),
-                  let encoded = webDavUrlString.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed),
-                  let remoteURL = URL(string: encoded) else {
+                  let creds = self.claroDriveCredentials() else {
                 await MainActor.run {
-                    NSWorkspace.shared.open(localURL)
+                    onStatus?(nil)
+                    onError?("No se pudieron obtener las credenciales de Claro drive para abrir '\(itemName)'.")
                 }
                 return
             }
-            var req = URLRequest(url: remoteURL, timeoutInterval: 30)
-            let authData = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
-            req.setValue("Basic \(authData)", forHTTPHeaderField: "Authorization")
-            req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
 
-            if let (data, resp) = try? await URLSession.shared.data(for: req),
-               let http = resp as? HTTPURLResponse,
-               (200...299).contains(http.statusCode),
-               !data.isEmpty {
-                try? data.write(to: destURL, options: .atomic)
-                await MainActor.run {
-                    NSWorkspace.shared.open(destURL)
+            let authData = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
+
+            // Try fast fileId preview endpoint first for non-GIF images (returns 1080p/2K in ~150ms)
+            if isImage, ext != "gif", let fid = fileId, !fid.isEmpty,
+               let previewURL = URL(string: "\(creds.serverUrl)/index.php/core/preview?fileId=\(fid)&x=2048&y=2048&a=1") {
+                if let data = await self.fetchCloudDataWithRetry(url: previewURL, authBase64: authData, userAgent: creds.userAgent) {
+                    let previewDiskFile = URL(fileURLWithPath: "/tmp/WinExplorerMac_CloudPreviews/\(fid).img", isDirectory: false)
+                    try? data.write(to: previewDiskFile, options: .atomic)
+                    if Self.writeConvertedImageData(data, to: destURL, fileExtension: ext) {
+                        await MainActor.run {
+                            onStatus?(nil)
+                            self.openLocalURL(destURL, withApplication: appURL)
+                        }
+                        return
+                    }
                 }
-            } else {
-                await MainActor.run {
-                    NSWorkspace.shared.open(localURL)
+            }
+
+            // Try WebDAV GET with properly encoded path segments
+            if let remoteURL = self.claroDriveEncodedWebDavURL(for: itemURL),
+               let data = await self.fetchCloudDataWithRetry(url: remoteURL, authBase64: authData, userAgent: creds.userAgent) {
+                if isImage && ext != "gif" {
+                    _ = Self.writeConvertedImageData(data, to: destURL, fileExtension: ext)
+                } else {
+                    try? data.write(to: destURL, options: .atomic)
                 }
+                if self.fileManager.fileExists(atPath: destURL.path) {
+                    await MainActor.run {
+                        onStatus?(nil)
+                        self.openLocalURL(destURL, withApplication: appURL)
+                    }
+                    return
+                }
+            }
+
+            await MainActor.run {
+                onStatus?(nil)
+                onError?("No se pudo abrir '\(itemName)' desde Claro drive. Inténtalo de nuevo en unos segundos.")
             }
         }
     }
 
+    private func fetchCloudDataWithRetry(url: URL, authBase64: String, userAgent: String) async -> Data? {
+        for attempt in 0..<3 {
+            var req = URLRequest(url: url, timeoutInterval: 25)
+            req.setValue("Basic \(authBase64)", forHTTPHeaderField: "Authorization")
+            req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+
+            if let (data, resp) = try? await cloudOpenSession.data(for: req),
+               let http = resp as? HTTPURLResponse {
+                if (200...299).contains(http.statusCode), !data.isEmpty {
+                    return data
+                }
+                if http.statusCode == 503 || http.statusCode == 429 {
+                    try? await Task.sleep(nanoseconds: UInt64(250_000_000 * (attempt + 1)))
+                    continue
+                }
+            }
+            if attempt < 2 {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
+        return nil
+    }
+
+    private static func writeConvertedImageData(_ data: Data, to destURL: URL, fileExtension: String) -> Bool {
+        let ext = fileExtension.lowercased()
+        if let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            if ext == "png", let pngData = rep.representation(using: .png, properties: [:]) {
+                if (try? pngData.write(to: destURL, options: .atomic)) != nil {
+                    return true
+                }
+            } else if ext == "jpg" || ext == "jpeg" {
+                if let jpgData = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.92]),
+                   (try? jpgData.write(to: destURL, options: .atomic)) != nil {
+                    return true
+                }
+            } else if ext == "tiff" || ext == "tif",
+                      let tiffData = rep.representation(using: .tiff, properties: [:]) {
+                if (try? tiffData.write(to: destURL, options: .atomic)) != nil {
+                    return true
+                }
+            } else if ext == "bmp",
+                      let bmpData = rep.representation(using: .bmp, properties: [:]) {
+                if (try? bmpData.write(to: destURL, options: .atomic)) != nil {
+                    return true
+                }
+            }
+        }
+        return (try? data.write(to: destURL, options: .atomic)) != nil
+    }
+
     public func availableApplications(for url: URL) -> [URL] {
-        NSWorkspace.shared.urlsForApplications(toOpen: url)
+        if Self.isCloudPath(url.path) {
+            let ext = url.pathExtension
+            if !ext.isEmpty, let contentType = UTType(filenameExtension: ext) {
+                return NSWorkspace.shared.urlsForApplications(toOpen: contentType)
+            }
+            return []
+        }
+        return NSWorkspace.shared.urlsForApplications(toOpen: url)
     }
 
     public func openItem(_ url: URL, withApplication appURL: URL) {
-        let config = NSWorkspace.OpenConfiguration()
-        NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config, completionHandler: nil)
+        if claroDriveServerUrl(for: url) != nil {
+            let syntheticItem = FileItem(
+                url: url,
+                name: url.lastPathComponent,
+                isDirectory: false,
+                isCloudDataless: true
+            )
+            openClaroDriveItem(syntheticItem, withApplication: appURL, onStatus: nil, onError: nil)
+            return
+        }
+        openLocalURL(url, withApplication: appURL)
     }
 
     public func openInTerminal(at directoryURL: URL) {

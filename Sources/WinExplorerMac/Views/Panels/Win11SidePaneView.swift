@@ -77,7 +77,7 @@ public struct Win11SidePaneView: View {
     @ViewBuilder
     private func previewContent(for item: FileItem) -> some View {
         VStack(alignment: .center, spacing: 12) {
-            if item.isImage, let nsImage = NSImage(contentsOf: item.url) {
+            if item.isImage, !item.isCloudDataless, let nsImage = NSImage(contentsOf: item.url) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .scaledToFit()
@@ -87,7 +87,11 @@ public struct Win11SidePaneView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Win11Theme.subtleBorder(colorScheme), lineWidth: 1)
                     )
+            } else if item.isImage && item.isCloudDataless {
+                Win11ItemIconView(item: item, size: 180)
+                    .padding(.vertical, 8)
             } else if item.isTextPreviewable,
+                      !item.isCloudDataless,
                       let text = try? String(contentsOf: item.url, encoding: .utf8) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(String(text.prefix(2000)))
@@ -130,14 +134,14 @@ public struct Win11SidePaneView: View {
     @ViewBuilder
     private func detailsContent(for item: FileItem) -> some View {
         VStack(alignment: .center, spacing: 8) {
-            if item.isImage, let nsImage = NSImage(contentsOf: item.url) {
+            if item.isImage, !item.isCloudDataless, let nsImage = NSImage(contentsOf: item.url) {
                 Image(nsImage: nsImage)
                     .resizable()
                     .scaledToFit()
                     .frame(height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             } else {
-                Win11ItemIconView(item: item, size: 68)
+                Win11ItemIconView(item: item, size: item.isImage ? 120 : 68)
             }
 
             Text(item.name)
