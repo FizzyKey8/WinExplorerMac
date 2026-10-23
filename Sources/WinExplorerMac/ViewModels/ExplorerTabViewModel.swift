@@ -404,18 +404,29 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             }
             lastClickedURL = item.url
             selectionAnchorURL = item.url
-        } else if modifiers.contains(.shift), let anchor = (selectionAnchorURL ?? lastClickedURL) {
-            let currentList = displayedItems.map { $0.url }
-            if let startIdx = currentList.firstIndex(of: anchor),
-               let endIdx = currentList.firstIndex(of: item.url) {
-                let lower = min(startIdx, endIdx)
-                let upper = max(startIdx, endIdx)
-                selectedURLs = Set(currentList[lower...upper])
+        } else if modifiers.contains(.shift) {
+            if selectedURLs.contains(item.url) {
+                selectedURLs.remove(item.url)
+                if lastClickedURL == item.url {
+                    lastClickedURL = selectedURLs.first
+                }
+            } else if let anchor = (selectionAnchorURL ?? lastClickedURL) {
+                let currentList = displayedItems.map { $0.url }
+                if let startIdx = currentList.firstIndex(of: anchor),
+                   let endIdx = currentList.firstIndex(of: item.url) {
+                    let lower = min(startIdx, endIdx)
+                    let upper = max(startIdx, endIdx)
+                    selectedURLs = selectedURLs.union(currentList[lower...upper])
+                } else {
+                    selectedURLs.insert(item.url)
+                    selectionAnchorURL = item.url
+                }
+                lastClickedURL = item.url
             } else {
                 selectedURLs = [item.url]
+                lastClickedURL = item.url
                 selectionAnchorURL = item.url
             }
-            lastClickedURL = item.url
         } else {
             selectedURLs = [item.url]
             lastClickedURL = item.url

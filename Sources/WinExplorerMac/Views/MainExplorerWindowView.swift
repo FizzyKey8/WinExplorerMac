@@ -95,6 +95,15 @@ public struct MainExplorerWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .win11TriggerOpenShortcut)) { _ in
             windowVM.openCurrentSelection()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .win11TriggerGoBackShortcut)) { _ in
+            if currentTab.renamingURL == nil {
+                if currentTab.canGoBack {
+                    currentTab.goBack()
+                } else if currentTab.canGoUp {
+                    currentTab.goUp()
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .win11TriggerArrowNavigation)) { notif in
             if let payload = notif.object as? ArrowNavigationPayload {
                 windowVM.navigateArrows(direction: payload.direction, extendSelection: payload.extendSelection)

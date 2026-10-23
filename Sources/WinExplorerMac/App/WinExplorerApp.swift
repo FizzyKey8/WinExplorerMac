@@ -168,6 +168,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
 
+            // Backspace / Delete (51) -> Go back to previous folder like in Windows Explorer
+            if event.keyCode == 51 {
+                NotificationCenter.default.post(name: .win11TriggerGoBackShortcut, object: nil)
+                return nil
+            }
+
             // Arrow keys navigation
             let extendSelection = event.modifierFlags.contains(.shift)
             switch event.keyCode {
@@ -328,4 +334,5 @@ public extension Notification.Name {
     static let win11NavigateToURL = Notification.Name("win11NavigateToURL")
     static let win11TriggerOpenShortcut = Notification.Name("win11TriggerOpenShortcut")
     static let win11TriggerArrowNavigation = Notification.Name("win11TriggerArrowNavigation")
+    static let win11TriggerGoBackShortcut = Notification.Name("win11TriggerGoBackShortcut")
 }

@@ -7,10 +7,49 @@ public struct Win11FolderContentView: View {
     @ObservedObject var clipboard: FileClipboardService
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var itemFrames: [URL: CGRect] = [:]
+    @State private var globalMarqueeRect: CGRect? = nil
+    @State private var containerOrigin: CGPoint = .zero
+    @State private var dragInitialSelection: Set<URL> = []
+
     public init(windowVM: ExplorerWindowViewModel, tab: ExplorerTabViewModel, clipboard: FileClipboardService) {
         self.windowVM = windowVM
         self.tab = tab
         self.clipboard = clipboard
+    }
+
+    private func handleDragChanged(start: CGPoint, current: CGPoint) {
+        if globalMarqueeRect == nil {
+            dragInitialSelection = tab.selectedURLs
+        }
+        let rect = CGRect(
+            x: min(start.x, current.x),
+            y: min(start.y, current.y),
+            width: abs(current.x - start.x),
+            height: abs(current.y - start.y)
+        )
+        self.globalMarqueeRect = rect
+
+        var newlySelected = Set<URL>()
+        for (url, frame) in itemFrames {
+            if frame.intersects(rect) {
+                newlySelected.insert(url)
+            }
+        }
+
+        if NSEvent.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.shift) {
+            tab.selectedURLs = dragInitialSelection.symmetricDifference(newlySelected)
+        } else {
+            tab.selectedURLs = newlySelected
+        }
+        if let first = newlySelected.first {
+            tab.lastClickedURL = first
+        }
+    }
+
+    private func handleDragEnded() {
+        self.globalMarqueeRect = nil
+        self.dragInitialSelection = []
     }
 
     public var body: some View {
@@ -24,7 +63,9 @@ public struct Win11FolderContentView: View {
                 onDoubleClick: nil,
                 onRightClick: { point in
                     windowVM.presentContextMenu(for: nil, at: point)
-                }
+                },
+                onDragChanged: handleDragChanged,
+                onDragEnded: handleDragEnded
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -63,13 +104,35 @@ public struct Win11FolderContentView: View {
                 .allowsHitTesting(false)
             }
         }
+        .overlay {
+            // Windows 11 translucent blue marquee drag selection box
+            if let globalRect = globalMarqueeRect {
+                let localRect = globalRect.offsetBy(dx: -containerOrigin.x, dy: -containerOrigin.y)
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color(red: 0.05, green: 0.52, blue: 0.95).opacity(0.18))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 1)
+                            .stroke(Color(red: 0.05, green: 0.52, blue: 0.95).opacity(0.75), lineWidth: 1)
+                    )
+                    .frame(width: max(0, localRect.width), height: max(0, localRect.height))
+                    .position(x: localRect.midX, y: localRect.midY)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onPreferenceChange(ItemGlobalFrameKey.self) { frames in
+            self.itemFrames = frames
+        }
         .background(
             GeometryReader { geo in
                 Color.clear
                     .onAppear {
+                        containerOrigin = geo.frame(in: .global).origin
                         if geo.size.width > 50 {
                             tab.contentWidth = geo.size.width
                         }
+                    }
+                    .onChange(of: geo.frame(in: .global).origin) { _, newOrigin in
+                        containerOrigin = newOrigin
                     }
                     .onChange(of: geo.size.width) { _, newWidth in
                         if newWidth > 50 {
@@ -107,18 +170,38 @@ public struct Win11FolderContentView: View {
 
         return ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                    ForEach(tab.displayedItems) { item in
-                        Win11GridItemCell(
-                            windowVM: windowVM,
-                            tab: tab,
-                            item: item,
-                            isCut: clipboard.isItemCut(item.url)
-                        )
-                        .id(item.url)
+                ZStack(alignment: .topLeading) {
+                    // Background mouse handler covering entire scrollable canvas
+                    Win11MouseHandlerView(
+                        onSingleClick: { _ in
+                            windowVM.dismissContextMenu()
+                            tab.clearSelection()
+                        },
+                        onDoubleClick: nil,
+                        onRightClick: { point in
+                            windowVM.presentContextMenu(for: nil, at: point)
+                        },
+                        onDragChanged: handleDragChanged,
+                        onDragEnded: handleDragEnded
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                        ForEach(tab.displayedItems) { item in
+                            Win11GridItemCell(
+                                windowVM: windowVM,
+                                tab: tab,
+                                item: item,
+                                isCut: clipboard.isItemCut(item.url),
+                                onDragChanged: handleDragChanged,
+                                onDragEnded: handleDragEnded
+                            )
+                            .id(item.url)
+                        }
                     }
+                    .padding(16)
                 }
-                .padding(16)
+                .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
             }
             .onChange(of: tab.lastClickedURL) { _, targetURL in
                 if let targetURL {
@@ -136,18 +219,37 @@ public struct Win11FolderContentView: View {
 
         return ScrollViewReader { scrollProxy in
             ScrollView(.vertical) {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
-                    ForEach(tab.displayedItems) { item in
-                        Win11ListItemRow(
-                            windowVM: windowVM,
-                            tab: tab,
-                            item: item,
-                            isCut: clipboard.isItemCut(item.url)
-                        )
-                        .id(item.url)
+                ZStack(alignment: .topLeading) {
+                    Win11MouseHandlerView(
+                        onSingleClick: { _ in
+                            windowVM.dismissContextMenu()
+                            tab.clearSelection()
+                        },
+                        onDoubleClick: nil,
+                        onRightClick: { point in
+                            windowVM.presentContextMenu(for: nil, at: point)
+                        },
+                        onDragChanged: handleDragChanged,
+                        onDragEnded: handleDragEnded
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 4) {
+                        ForEach(tab.displayedItems) { item in
+                            Win11ListItemRow(
+                                windowVM: windowVM,
+                                tab: tab,
+                                item: item,
+                                isCut: clipboard.isItemCut(item.url),
+                                onDragChanged: handleDragChanged,
+                                onDragEnded: handleDragEnded
+                            )
+                            .id(item.url)
+                        }
                     }
+                    .padding(14)
                 }
-                .padding(14)
+                .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
             }
             .onChange(of: tab.lastClickedURL) { _, targetURL in
                 if let targetURL {
@@ -186,18 +288,7 @@ public struct Win11FolderContentView: View {
             // Rows
             ScrollViewReader { scrollProxy in
                 ScrollView(.vertical) {
-                    LazyVStack(spacing: 1) {
-                        ForEach(tab.displayedItems) { item in
-                            Win11DetailsTableRow(
-                                windowVM: windowVM,
-                                tab: tab,
-                                item: item,
-                                isCut: clipboard.isItemCut(item.url)
-                            )
-                            .id(item.url)
-                        }
-
-                        // Bottom empty area inside scroll view that still responds to right-click on folder background
+                    ZStack(alignment: .topLeading) {
                         Win11MouseHandlerView(
                             onSingleClick: { _ in
                                 windowVM.dismissContextMenu()
@@ -206,12 +297,29 @@ public struct Win11FolderContentView: View {
                             onDoubleClick: nil,
                             onRightClick: { point in
                                 windowVM.presentContextMenu(for: nil, at: point)
-                            }
+                            },
+                            onDragChanged: handleDragChanged,
+                            onDragEnded: handleDragEnded
                         )
-                        .frame(minHeight: 120)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                        LazyVStack(spacing: 1) {
+                            ForEach(tab.displayedItems) { item in
+                                Win11DetailsTableRow(
+                                    windowVM: windowVM,
+                                    tab: tab,
+                                    item: item,
+                                    isCut: clipboard.isItemCut(item.url),
+                                    onDragChanged: handleDragChanged,
+                                    onDragEnded: handleDragEnded
+                                )
+                                .id(item.url)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
                 }
                 .onChange(of: tab.lastClickedURL) { _, targetURL in
                     if let targetURL {
@@ -252,6 +360,8 @@ struct Win11GridItemCell: View {
     @ObservedObject var tab: ExplorerTabViewModel
     let item: FileItem
     let isCut: Bool
+    var onDragChanged: ((CGPoint, CGPoint) -> Void)? = nil
+    var onDragEnded: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered: Bool = false
@@ -321,6 +431,14 @@ struct Win11GridItemCell: View {
                         .stroke(isSelected ? Win11Theme.selectionBorder(colorScheme) : Color.clear, lineWidth: 1)
                 )
         )
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ItemGlobalFrameKey.self,
+                    value: [item.url: geo.frame(in: .global)]
+                )
+            }
+        )
         .onHover { hovering in
             isHovered = hovering
         }
@@ -336,7 +454,9 @@ struct Win11GridItemCell: View {
                     },
                     onRightClick: { point in
                         windowVM.presentContextMenu(for: item, at: point)
-                    }
+                    },
+                    onDragChanged: onDragChanged,
+                    onDragEnded: onDragEnded
                 )
             }
         }
@@ -358,6 +478,8 @@ struct Win11ListItemRow: View {
     @ObservedObject var tab: ExplorerTabViewModel
     let item: FileItem
     let isCut: Bool
+    var onDragChanged: ((CGPoint, CGPoint) -> Void)? = nil
+    var onDragEnded: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered: Bool = false
@@ -413,6 +535,14 @@ struct Win11ListItemRow: View {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(isSelected ? Win11Theme.selectionFill(colorScheme) : (isHovered ? Win11Theme.hoverFill(colorScheme) : Color.clear))
         )
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ItemGlobalFrameKey.self,
+                    value: [item.url: geo.frame(in: .global)]
+                )
+            }
+        )
         .onHover { hovering in
             isHovered = hovering
         }
@@ -428,7 +558,9 @@ struct Win11ListItemRow: View {
                     },
                     onRightClick: { point in
                         windowVM.presentContextMenu(for: item, at: point)
-                    }
+                    },
+                    onDragChanged: onDragChanged,
+                    onDragEnded: onDragEnded
                 )
             }
         }
@@ -441,6 +573,8 @@ private struct Win11DetailsTableRow: View {
     @ObservedObject var tab: ExplorerTabViewModel
     let item: FileItem
     let isCut: Bool
+    var onDragChanged: ((CGPoint, CGPoint) -> Void)? = nil
+    var onDragEnded: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered: Bool = false
@@ -523,6 +657,14 @@ private struct Win11DetailsTableRow: View {
                         .stroke(isSelected ? Win11Theme.selectionBorder(colorScheme) : Color.clear, lineWidth: 1)
                 )
         )
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ItemGlobalFrameKey.self,
+                    value: [item.url: geo.frame(in: .global)]
+                )
+            }
+        )
         .onHover { hovering in
             isHovered = hovering
         }
@@ -538,7 +680,9 @@ private struct Win11DetailsTableRow: View {
                     },
                     onRightClick: { point in
                         windowVM.presentContextMenu(for: item, at: point)
-                    }
+                    },
+                    onDragChanged: onDragChanged,
+                    onDragEnded: onDragEnded
                 )
             }
         }
@@ -553,3 +697,11 @@ private struct Win11DetailsTableRow: View {
         return Color.clear
     }
 }
+
+public struct ItemGlobalFrameKey: PreferenceKey {
+    public static var defaultValue: [URL: CGRect] = [:]
+    public static func reduce(value: inout [URL: CGRect], nextValue: () -> [URL: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+

@@ -242,8 +242,16 @@ public struct Win11HomeView: View {
         )
         .overlay(
             Win11MouseHandlerView(
-                onSingleClick: { _ in
-                    tab.selectedURLs = [pinned.url]
+                onSingleClick: { modifiers in
+                    if modifiers.contains(.shift) || modifiers.contains(.command) {
+                        if tab.selectedURLs.contains(pinned.url) {
+                            tab.selectedURLs.remove(pinned.url)
+                        } else {
+                            tab.selectedURLs.insert(pinned.url)
+                        }
+                    } else {
+                        tab.selectedURLs = [pinned.url]
+                    }
                     tab.lastClickedURL = pinned.url
                 },
                 onDoubleClick: {
@@ -288,8 +296,16 @@ public struct Win11HomeView: View {
         )
         .overlay(
             Win11MouseHandlerView(
-                onSingleClick: { _ in
-                    tab.selectedURLs = [item.url]
+                onSingleClick: { modifiers in
+                    if modifiers.contains(.shift) || modifiers.contains(.command) {
+                        if tab.selectedURLs.contains(item.url) {
+                            tab.selectedURLs.remove(item.url)
+                        } else {
+                            tab.selectedURLs.insert(item.url)
+                        }
+                    } else {
+                        tab.selectedURLs = [item.url]
+                    }
                     tab.lastClickedURL = item.url
                 },
                 onDoubleClick: {
