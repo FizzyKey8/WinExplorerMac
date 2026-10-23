@@ -556,8 +556,10 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
 
     // MARK: - Inline Rename
     public func beginRename(for item: FileItem? = nil) {
-        let targetURL = item?.url ?? (selectedURLs.count == 1 ? selectedURLs.first : nil)
+        let targetURL = item?.url ?? (selectedURLs.count == 1 ? selectedURLs.first : (selectedURLs.isEmpty ? lastClickedURL : nil))
         guard let url = targetURL else { return }
+        selectedURLs = [url]
+        lastClickedURL = url
         renamingURL = url
         renamingText = url.lastPathComponent
     }

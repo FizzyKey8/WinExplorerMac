@@ -197,6 +197,7 @@ public struct Win11FolderContentView: View {
                                 onDragEnded: handleDragEnded
                             )
                             .id(item.url)
+                            .zIndex(tab.renamingURL == item.url ? 999 : 0)
                         }
                     }
                     .padding(16)
@@ -245,6 +246,7 @@ public struct Win11FolderContentView: View {
                                 onDragEnded: handleDragEnded
                             )
                             .id(item.url)
+                            .zIndex(tab.renamingURL == item.url ? 999 : 0)
                         }
                     }
                     .padding(14)
@@ -314,6 +316,7 @@ public struct Win11FolderContentView: View {
                                     onDragEnded: handleDragEnded
                                 )
                                 .id(item.url)
+                                .zIndex(tab.renamingURL == item.url ? 999 : 0)
                             }
                         }
                         .padding(.horizontal, 8)
@@ -375,6 +378,24 @@ struct Win11GridItemCell: View {
         tab.renamingURL == item.url
     }
 
+    private var isTextCoveredByRenaming: Bool {
+        guard let renamingURL = tab.renamingURL, renamingURL != item.url else { return false }
+        guard let renamingIndex = tab.displayedItems.firstIndex(where: { $0.url == renamingURL }),
+              let myIndex = tab.displayedItems.firstIndex(where: { $0.url == item.url }) else {
+            return false
+        }
+        if abs(myIndex - renamingIndex) == 1 {
+            let cols = max(1, tab.currentColumns)
+            let renamingRow = renamingIndex / cols
+            let myRow = myIndex / cols
+            if cols > 1 && renamingRow != myRow {
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
     var body: some View {
         VStack(spacing: 5) {
             ZStack(alignment: .topLeading) {
@@ -383,7 +404,7 @@ struct Win11GridItemCell: View {
                     .frame(maxWidth: .infinity)
 
                 // Windows 11 selection checkbox on hover or selection
-                if isHovered || isSelected {
+                if (isHovered || isSelected) && !isRenaming && !isTextCoveredByRenaming {
                     Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                         .font(.system(size: 13))
                         .foregroundStyle(isSelected ? Win11Theme.accentBlue(colorScheme) : .secondary)
@@ -403,32 +424,42 @@ struct Win11GridItemCell: View {
                 }
                 .padding(.top, 1)
             } else if isRenaming {
-                TextField("", text: $tab.renamingText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11.5))
-                    .multilineTextAlignment(.center)
-                    .onSubmit {
-                        tab.commitRenameIfNeeded()
-                    }
-                    .onExitCommand {
-                        tab.cancelRename()
-                    }
+                Win11RenameTextField(
+                    text: $tab.renamingText,
+                    alignment: .center,
+                    onCommit: { tab.commitRenameIfNeeded() },
+                    onCancel: { tab.cancelRename() }
+                )
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.13) : Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .stroke(Win11Theme.accentBlue(colorScheme), lineWidth: 1.5)
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.65 : 0.2), radius: 6, x: 0, y: 2)
+                .frame(minWidth: max(90, tab.viewMode.gridCellWidth - 16), maxWidth: max(180, tab.viewMode.gridCellWidth + 50))
             } else {
                 Text(item.displayName(showExtensions: tab.showFileExtensions))
                     .font(.system(size: 12))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .foregroundStyle(.primary)
+                    .opacity(isTextCoveredByRenaming ? 0 : 1)
             }
         }
         .padding(8)
-        .frame(width: tab.viewMode.gridCellWidth)
+        .frame(width: isRenaming ? max(180, tab.viewMode.gridCellWidth + 50) : tab.viewMode.gridCellWidth)
+        .zIndex(isRenaming ? 50 : 0)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(cellBackground)
+                .fill(isRenaming ? Color.clear : cellBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(isSelected ? Win11Theme.selectionBorder(colorScheme) : Color.clear, lineWidth: 1)
+                        .stroke((isSelected && !isRenaming) ? Win11Theme.selectionBorder(colorScheme) : Color.clear, lineWidth: 1)
                 )
         )
         .background(
@@ -499,15 +530,24 @@ struct Win11ListItemRow: View {
                 .opacity((item.isHidden || isCut) ? 0.50 : 1.0)
 
             if isRenaming {
-                TextField("", text: $tab.renamingText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-                    .onSubmit {
-                        tab.commitRenameIfNeeded()
-                    }
-                    .onExitCommand {
-                        tab.cancelRename()
-                    }
+                Win11RenameTextField(
+                    text: $tab.renamingText,
+                    alignment: .left,
+                    onCommit: { tab.commitRenameIfNeeded() },
+                    onCancel: { tab.cancelRename() }
+                )
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.13) : Color.white)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Win11Theme.accentBlue(colorScheme), lineWidth: 1.5)
+                )
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.5 : 0.2), radius: 4, x: 0, y: 1)
+                .frame(minWidth: 160, maxWidth: 600)
             } else {
                 HStack(spacing: 6) {
                     Text(item.displayName(showExtensions: tab.showFileExtensions))
@@ -596,15 +636,24 @@ private struct Win11DetailsTableRow: View {
                     .opacity((item.isHidden || isCut) ? 0.50 : 1.0)
 
                 if isRenaming {
-                    TextField("", text: $tab.renamingText)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                        .onSubmit {
-                            tab.commitRenameIfNeeded()
-                        }
-                        .onExitCommand {
-                            tab.cancelRename()
-                        }
+                    Win11RenameTextField(
+                        text: $tab.renamingText,
+                        alignment: .left,
+                        onCommit: { tab.commitRenameIfNeeded() },
+                        onCancel: { tab.cancelRename() }
+                    )
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(colorScheme == .dark ? Color(red: 0.11, green: 0.11, blue: 0.13) : Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Win11Theme.accentBlue(colorScheme), lineWidth: 1.5)
+                    )
+                    .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.5 : 0.2), radius: 4, x: 0, y: 1)
+                    .frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
                 } else {
                     HStack(spacing: 6) {
                         Text(item.displayName(showExtensions: tab.showFileExtensions))
