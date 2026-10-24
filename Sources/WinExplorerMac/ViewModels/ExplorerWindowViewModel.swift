@@ -176,7 +176,8 @@ public final class ExplorerWindowViewModel: ObservableObject {
                     thisPCItems.append(fi)
                 }
             }
-            let driveCols = max(1, Int((max(200, tab.contentWidth - 40) + 14) / (270 + 14)))
+            let availableWidth: CGFloat = max(200, tab.contentWidth - 40)
+            let driveCols: Int = max(1, Int((availableWidth + 14) / (270 + 14)))
             tab.navigateArrows(direction: direction, extendSelection: extendSelection, itemsOverride: thisPCItems, columns: driveCols)
         }
     }
