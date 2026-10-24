@@ -107,3 +107,9 @@ Esto generará:
    xed .
    ```
 2. Selecciona **My Mac** y pulsa **`Cmd + R`** para ejecutar.
+
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia **GNU General Public License v3.0** (GNU GPL v3). Consulta el archivo [LICENSE](LICENSE) para más detalles.
