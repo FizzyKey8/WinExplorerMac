@@ -47,11 +47,24 @@ WinExplorerMac cuenta con un selector de temas en la barra de menús (**Tema**):
 
 ### 5. Vistas de Inicio (`Home`) y Este Equipo (`This PC`)
 - **Inicio**: Tarjetas de **Acceso rápido** personalizables con chincheta de anclaje y sección de **Archivos recientes** (conmutables entre vista de **iconos grandes con miniaturas** o **tabla de detalles con fecha y ubicación**).
+  - **Acciones completas de la barra de comandos**: Copiar, Cortar, Pegar, Renombrar, Eliminar a la papelera, Compartir y Comprimir directamente sobre elementos de Inicio.
+  - **Apertura instantánea y miniaturas de la nube**: Detección de archivos en caché local para apertura inmediata (< 1 ms) sin re-descargas ni bloqueos, con generación de miniaturas e iconos en tiempo real.
+  - **Selección múltiple por arrastre (Marquee)** en cualquier zona de la vista de Inicio.
 - **Este equipo**: Unidades de disco y volúmenes montados con barras de estado de capacidad en GB (color azul, o rojo si supera el 90% de ocupación).
 
-### 6. Explorador Predeterminado del Sistema
+### 6. Renombrado In-Place Inteligente (`WinRenameTextField`)
+- Activación inmediata con **`F2`** o el icono de renombrar de la barra de comandos, seleccionando automáticamente solo el nombre sin la extensión para edición directa.
+- **Visualización completa de nombres largos**: El cuadro de edición se adapta para mostrar el nombre completo de forma legible sin requerir desplazamiento.
+- **Tarjeta flotante Fluent**: Fondo oscuro opaco de alto contraste con borde azul de foco y elevación `.zIndex` con ocultamiento dinámico del texto vecino, evitando solapamientos o transparencias con elementos adyacentes en cuadrícula.
+
+### 7. Selección Múltiple Avanzada
+- **Selección rectangular (Marquee selection)** arrastrando con el ratón tanto en carpetas como en Inicio.
+- **Deselección interactiva con `Shift` y `Cmd`**: Al hacer clic con la tecla `Shift` o `Cmd` presionada sobre elementos ya seleccionados, se alternan o deseleccionan con precisión.
+
+### 8. Explorador Predeterminado del Sistema y Rendimiento
 - Capacidad para establecerse como el **gestor de archivos predeterminado** de macOS desde el menú superior.
 - Al descargar una imagen o archivo en navegadores como **Microsoft Edge** o Google Chrome y pulsar *"Mostrar en la carpeta"*, WinExplorerMac se abre automáticamente seleccionando el archivo.
+- **Arranque asíncrono ultra-rápido**: Carga diferida en memoria para evitar llamadas bloqueantes al sistema de archivos virtual (VFS) de proveedores en la nube (iCloud, OneDrive, Clarodrive).
 
 ---
 
@@ -72,6 +85,8 @@ WinExplorerMac cuenta con un selector de temas en la barra de menús (**Tema**):
 | Subir un nivel de carpeta | `Cmd + ↑` |
 | Propiedades del archivo o carpeta | `Cmd + I` |
 | Actualizar vista | `Cmd + R` |
+| Selección / Deselección múltiple | `Cmd + Clic` / `Shift + Clic` |
+| Selección por recuadro (Marquee) | Arrastrar con ratón |
 
 ---
 
