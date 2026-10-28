@@ -1055,7 +1055,7 @@ public final class FileSystemService {
         if stdURL == Self.trashDirectoryURL {
             return FileItem(
                 url: stdURL,
-                name: "Basurero",
+                name: "Papelera",
                 isDirectory: true,
                 isHidden: false,
                 isSymlink: false,

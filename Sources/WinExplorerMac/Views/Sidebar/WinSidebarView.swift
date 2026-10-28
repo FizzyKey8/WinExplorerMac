@@ -169,7 +169,7 @@ public struct Win11SidebarView: View {
                         // Trash / Recycle Bin shortcut
                         let trashURL = FileSystemService.trashDirectoryURL
                         sidebarRow(
-                            title: "Basurero",
+                            title: "Papelera",
                             isSelected: tab.destination == .directory(trashURL),
                             indentation: 10,
                             leadingIcon: {
@@ -180,14 +180,14 @@ public struct Win11SidebarView: View {
                             tab.navigate(to: .directory(trashURL))
                         }
                         .contextMenu {
-                            Button("Abrir Basurero") {
+                            Button("Abrir Papelera") {
                                 tab.navigate(to: .directory(trashURL))
                             }
                             Button("Abrir en una pestaña nueva") {
                                 windowVM.createNewTab(at: .directory(trashURL), activate: true)
                             }
                             Divider()
-                            Button("Vaciar Basurero...") {
+                            Button("Vaciar Papelera...") {
                                 FileSystemService.shared.emptyTrash()
                                 tab.reload()
                             }

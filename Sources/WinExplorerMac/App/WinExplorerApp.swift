@@ -28,6 +28,7 @@ public struct WinExplorerApp: App {
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1180, height: 740)
+        .handlesExternalEvents(matching: [])
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("Buscar actualizaciones...") {
@@ -101,7 +102,35 @@ public struct WinExplorerApp: App {
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     public static var configuredWindows = Set<ObjectIdentifier>()
     public static var mainExplorerWindow: NSWindow?
+    public static weak var activeWindowViewModel: ExplorerWindowViewModel?
+    public static var pendingIncomingURL: (directory: URL, select: URL?)?
     private var keyMonitor: Any?
+
+    public static func consumePendingIncomingURL() -> (directory: URL, select: URL?)? {
+        defer { pendingIncomingURL = nil }
+        return pendingIncomingURL
+    }
+
+    public static var hasOpenExplorerWindow: Bool {
+        if let window = mainExplorerWindow, window.isVisible || window.isMiniaturized {
+            return true
+        }
+        for window in NSApplication.shared.windows {
+            if window.className != "NSStatusBarWindow" && window.canBecomeKey && (window.isVisible || window.isMiniaturized) {
+                return true
+            }
+        }
+        return false
+    }
+
+    public static var currentOpenWindow: NSWindow? {
+        if let window = mainExplorerWindow, window.isVisible || window.isMiniaturized {
+            return window
+        }
+        return NSApplication.shared.windows.first {
+            $0.className != "NSStatusBarWindow" && $0.canBecomeKey && ($0.isVisible || $0.isMiniaturized)
+        }
+    }
 
     public override init() {
         super.init()
@@ -115,6 +144,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.regular)
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Handler for reveal/select AppleEvents ('misc' / 'slct') from external apps / browsers
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleRevealAppleEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(0x6d697363), // 'misc'
+            andEventID: AEEventID(0x736c6374)       // 'slct'
+        )
 
         DispatchQueue.main.async {
             NSApplication.shared.setActivationPolicy(.regular)
@@ -219,6 +256,32 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let first = filenames.first else { return }
         let url = URL(fileURLWithPath: first)
         handleIncomingURL(url)
+        sender.reply(toOpenOrPrint: .success)
+    }
+
+    @objc private func handleRevealAppleEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let directParam = event.paramDescriptor(forKeyword: keyDirectObject) else { return }
+
+        var targetURL: URL?
+        if directParam.descriptorType == typeFileURL {
+            if let str = directParam.stringValue {
+                targetURL = URL(string: str)
+            }
+        } else if let str = directParam.stringValue {
+            if str.starts(with: "file://") {
+                targetURL = URL(string: str)
+            } else {
+                targetURL = URL(fileURLWithPath: str)
+            }
+        } else if directParam.numberOfItems > 0 {
+            if let itemDesc = directParam.atIndex(1), let str = itemDesc.stringValue {
+                targetURL = str.starts(with: "file://") ? URL(string: str) : URL(fileURLWithPath: str)
+            }
+        }
+
+        if let targetURL {
+            handleIncomingURL(targetURL)
+        }
     }
 
     private func handleIncomingURL(_ rawURL: URL) {
@@ -237,24 +300,57 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             fileToSelect = clean
         }
 
-        NotificationCenter.default.post(
-            name: .win11NavigateToURL,
-            object: nil,
-            userInfo: [
-                "directory": targetDir,
-                "select": fileToSelect as Any
-            ]
-        )
+        let isWindowAlreadyOpen = Self.hasOpenExplorerWindow
 
-        DispatchQueue.main.async {
-            if let window = Self.mainExplorerWindow {
-                if window.isMiniaturized {
-                    window.deminiaturize(nil)
+        if isWindowAlreadyOpen {
+            // A window of the explorer is already open: DO NOT open a new window.
+            // Bring the existing window to the front and open a new tab in it.
+            DispatchQueue.main.async {
+                if let window = Self.currentOpenWindow ?? Self.mainExplorerWindow {
+                    if window.isMiniaturized {
+                        window.deminiaturize(nil)
+                    }
+                    window.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
                 }
-                window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            } else {
-                NotificationCenter.default.post(name: .win11ReopenMainWindow, object: nil)
+
+                if let activeVM = Self.activeWindowViewModel {
+                    activeVM.openInNewTab(directoryURL: targetDir, selecting: fileToSelect)
+                } else {
+                    NotificationCenter.default.post(
+                        name: .win11NavigateToURL,
+                        object: nil,
+                        userInfo: [
+                            "directory": targetDir,
+                            "select": fileToSelect as Any,
+                            "openInNewTab": true
+                        ]
+                    )
+                }
+            }
+        } else {
+            // No window is currently open: store the pending URL so the opening window starts directly here.
+            Self.pendingIncomingURL = (directory: targetDir, select: fileToSelect)
+
+            DispatchQueue.main.async {
+                if let window = Self.mainExplorerWindow {
+                    if window.isMiniaturized {
+                        window.deminiaturize(nil)
+                    }
+                    window.makeKeyAndOrderFront(nil)
+                    NSApp.activate(ignoringOtherApps: true)
+                    NotificationCenter.default.post(
+                        name: .win11NavigateToURL,
+                        object: nil,
+                        userInfo: [
+                            "directory": targetDir,
+                            "select": fileToSelect as Any,
+                            "openInNewTab": false
+                        ]
+                    )
+                } else {
+                    NotificationCenter.default.post(name: .win11ReopenMainWindow, object: nil)
+                }
             }
         }
     }

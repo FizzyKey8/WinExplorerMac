@@ -84,6 +84,7 @@ public struct MainExplorerWindowView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .onAppear {
+            AppDelegate.activeWindowViewModel = windowVM
             ThemeManager.applyWindowAppearance(for: themeManager.currentTheme)
             updateService.checkOnLaunchIfNeeded()
         }

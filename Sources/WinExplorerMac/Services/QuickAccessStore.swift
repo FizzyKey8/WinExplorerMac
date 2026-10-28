@@ -191,10 +191,16 @@ public final class QuickAccessStore: ObservableObject {
                 FileSystemService.isCloudPath($0.path) ||
                 FileManager.default.fileExists(atPath: $0.path)
             }
+            valid = valid.map { item in
+                if (item.path == trashPath || item.path.hasSuffix("/.Trash")) && item.customTitle == "Basurero" {
+                    return PinnedFolderItem(path: item.path, customTitle: "Papelera", isSystemDefault: item.isSystemDefault)
+                }
+                return item
+            }
             if !UserDefaults.standard.bool(forKey: trashMigrationKey) {
                 UserDefaults.standard.set(true, forKey: trashMigrationKey)
                 if !valid.contains(where: { $0.path == trashPath }) {
-                    valid.append(PinnedFolderItem(path: trashPath, customTitle: "Basurero", isSystemDefault: true))
+                    valid.append(PinnedFolderItem(path: trashPath, customTitle: "Papelera", isSystemDefault: true))
                 }
             }
             if !UserDefaults.standard.bool(forKey: cloudMigrationKey) {
@@ -220,7 +226,7 @@ public final class QuickAccessStore: ObservableObject {
             ("Pictures", "Imágenes"),
             ("Music", "Música"),
             ("Movies", "Videos"),
-            (".Trash", "Basurero")
+            (".Trash", "Papelera")
         ]
 
         var initialPinned = defaults.compactMap { folderName, localizedName -> PinnedFolderItem? in

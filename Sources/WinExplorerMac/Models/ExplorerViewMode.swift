@@ -98,7 +98,7 @@ public enum NavigationDestination: Equatable, Hashable {
         if std.path == home.appendingPathComponent("Pictures", isDirectory: true).path { return "Imágenes" }
         if std.path == home.appendingPathComponent("Music", isDirectory: true).path { return "Música" }
         if std.path == home.appendingPathComponent("Movies", isDirectory: true).path { return "Videos" }
-        if std.path == home.appendingPathComponent(".Trash", isDirectory: true).path { return "Basurero" }
+        if std.path == home.appendingPathComponent(".Trash", isDirectory: true).path { return "Papelera" }
         if std.path == FileSystemService.iCloudDriveURL.path { return "iCloud Drive" }
         if std.deletingLastPathComponent().cleanFileURL.path == FileSystemService.cloudStorageRootURL.path {
             return FileSystemService.parseCloudProviderFolderName(std.lastPathComponent).name

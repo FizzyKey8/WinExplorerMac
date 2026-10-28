@@ -34,9 +34,34 @@ public final class ExplorerWindowViewModel: ObservableObject {
     private var serviceCancellables = Set<AnyCancellable>()
 
     public init() {
-        let initialTab = ExplorerTabViewModel(initialDestination: .home)
+        let initialDest: NavigationDestination
+        var initialSelect: URL? = nil
+
+        if let pending = AppDelegate.consumePendingIncomingURL() {
+            initialDest = .directory(pending.directory.cleanFileURL)
+            initialSelect = pending.select?.cleanFileURL
+        } else {
+            initialDest = .home
+        }
+
+        let initialTab = ExplorerTabViewModel(initialDestination: initialDest)
         self.tabs = [initialTab]
         self.activeTabId = initialTab.id
+        AppDelegate.activeWindowViewModel = self
+
+        if let initialSelect {
+            initialTab.selectedURLs = [initialSelect]
+            initialTab.lastClickedURL = initialSelect
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak initialTab] in
+                initialTab?.selectedURLs = [initialSelect]
+                initialTab?.lastClickedURL = initialSelect
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak initialTab] in
+                initialTab?.selectedURLs = [initialSelect]
+                initialTab?.lastClickedURL = initialSelect
+            }
+        }
+
         bindTabObservers()
         clipboard.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -54,7 +79,41 @@ public final class ExplorerWindowViewModel: ObservableObject {
             guard let self else { return }
             guard let dirURL = notif.userInfo?["directory"] as? URL else { return }
             let selectURL = notif.userInfo?["select"] as? URL
-            self.navigateActiveTab(to: dirURL, selecting: selectURL)
+            let openInNewTab = notif.userInfo?["openInNewTab"] as? Bool ?? false
+
+            if openInNewTab {
+                self.openInNewTab(directoryURL: dirURL, selecting: selectURL)
+            } else {
+                self.navigateActiveTab(to: dirURL, selecting: selectURL)
+            }
+        }
+    }
+
+    public func openInNewTab(directoryURL: URL, selecting fileURL: URL? = nil) {
+        AppDelegate.activeWindowViewModel = self
+        let dest = NavigationDestination.directory(directoryURL.cleanFileURL)
+        let inheritedTab = activeTab
+        let newTab = ExplorerTabViewModel(
+            initialDestination: dest,
+            viewMode: inheritedTab.viewMode,
+            showHiddenFiles: inheritedTab.showHiddenFiles,
+            showFileExtensions: inheritedTab.showFileExtensions
+        )
+        tabs.append(newTab)
+        activeTabId = newTab.id
+
+        if let fileURL {
+            let clean = fileURL.cleanFileURL
+            newTab.selectedURLs = [clean]
+            newTab.lastClickedURL = clean
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak newTab] in
+                newTab?.selectedURLs = [clean]
+                newTab?.lastClickedURL = clean
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak newTab] in
+                newTab?.selectedURLs = [clean]
+                newTab?.lastClickedURL = clean
+            }
         }
     }
 
