@@ -1353,17 +1353,17 @@ public final class FileSystemService {
             return
         }
 
-        // 2. If locally present on disk with allocated blocks: open directly!
-        if isFileLocallyPresent(item.url) {
-            CloudDownloadManager.shared.finishDownload(for: item)
-            onStatus?(nil)
-            openLocalURL(item.url, withApplication: appURL)
+        // 2. Claro drive virtual dataless item: check BEFORE isFileLocallyPresent to never stat CloudStorage VFS
+        if claroDriveServerUrl(for: item.url) != nil || item.cloudFileId != nil {
+            openClaroDriveItem(item, withApplication: appURL, onStatus: onStatus, onError: onError)
             return
         }
 
-        // 3. Claro drive virtual dataless item:
-        if claroDriveServerUrl(for: item.url) != nil || item.cloudFileId != nil {
-            openClaroDriveItem(item, withApplication: appURL, onStatus: onStatus, onError: onError)
+        // 3. If locally present on disk with allocated blocks: open directly!
+        if !item.isCloudDataless && !Self.isCloudPath(item.url.path) && isFileLocallyPresent(item.url) {
+            CloudDownloadManager.shared.finishDownload(for: item)
+            onStatus?(nil)
+            openLocalURL(item.url, withApplication: appURL)
             return
         }
 
