@@ -1,6 +1,6 @@
 import Foundation
 
-public enum ExplorerViewMode: String, CaseIterable, Identifiable {
+public enum ExplorerViewMode: String, CaseIterable, Identifiable, Codable {
     case extraLargeIcons = "Iconos muy grandes"
     case largeIcons = "Iconos grandes"
     case mediumIcons = "Iconos medianos"

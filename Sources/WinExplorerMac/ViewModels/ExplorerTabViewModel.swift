@@ -23,7 +23,13 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             }
         }
     }
-    @Published public var viewMode: ExplorerViewMode = .details
+    @Published public var viewMode: ExplorerViewMode = .details {
+        didSet {
+            if oldValue != viewMode {
+                FolderViewSettingsStore.shared.setViewMode(viewMode, for: destination)
+            }
+        }
+    }
     @Published public var sortField: ExplorerSortField = .name {
         didSet {
             if oldValue != sortField {
@@ -56,13 +62,16 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     public init(
         id: UUID = UUID(),
         initialDestination: NavigationDestination = .home,
-        viewMode: ExplorerViewMode = .details,
+        viewMode: ExplorerViewMode? = nil,
         showHiddenFiles: Bool = false,
         showFileExtensions: Bool = true
     ) {
         self.id = id
         self.destination = initialDestination
-        self.viewMode = viewMode
+        let resolvedViewMode = FolderViewSettingsStore.shared.viewMode(for: initialDestination)
+            ?? viewMode
+            ?? .details
+        self.viewMode = resolvedViewMode
         self.showHiddenFiles = showHiddenFiles
         self.showFileExtensions = showFileExtensions
         loadCurrentDestination()
@@ -320,6 +329,9 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             forwardStack.removeAll()
         }
         destination = newDestination
+        if let savedMode = FolderViewSettingsStore.shared.viewMode(for: newDestination) {
+            self.viewMode = savedMode
+        }
         selectedURLs.removeAll()
         lastClickedURL = nil
         searchQuery = ""
