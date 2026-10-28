@@ -58,6 +58,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     private var loadTask: Task<Void, Never>?
     private var filterSortTask: Task<Void, Never>?
     private var monitorDebounceWorkItem: DispatchWorkItem?
+    private var customizationObserver: Any?
 
     public init(
         id: UUID = UUID(),
@@ -75,6 +76,14 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         self.showHiddenFiles = showHiddenFiles
         self.showFileExtensions = showFileExtensions
         loadCurrentDestination()
+
+        self.customizationObserver = NotificationCenter.default.addObserver(
+            forName: .folderCustomizationChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     deinit {
@@ -82,6 +91,9 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         filterSortTask?.cancel()
         monitorDebounceWorkItem?.cancel()
         stopDirectoryMonitor()
+        if let customizationObserver {
+            NotificationCenter.default.removeObserver(customizationObserver)
+        }
     }
 
     // MARK: - Computed Properties

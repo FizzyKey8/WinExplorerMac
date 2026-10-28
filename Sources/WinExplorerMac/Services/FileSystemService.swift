@@ -900,8 +900,8 @@ public final class FileSystemService {
                 }
             }
 
-            if name == "." || name == ".." { continue }
-            if !includeHidden && (name.hasPrefix(".") || name == "Icon\r") { continue }
+            if name == "." || name == ".." || name == "Icon\r" { continue }
+            if !includeHidden && name.hasPrefix(".") { continue }
             if directoriesOnly && dType != UInt8(DT_DIR) && dType != UInt8(DT_UNKNOWN) && dType != UInt8(DT_LNK) {
                 continue
             }
@@ -1274,6 +1274,48 @@ public final class FileSystemService {
             }
         }
         return resultingURLs
+    }
+
+    // MARK: - Hidden Attributes
+    public func setHidden(_ hidden: Bool, for urls: [URL]) {
+        for url in urls {
+            let clean = url.cleanFileURL
+            let path = clean.path
+            let fileName = clean.lastPathComponent
+
+            // Si empieza con '.' y se desea desocultar, quitamos el prefijo '.' si no es archivo reservado de sistema
+            if !hidden && fileName.hasPrefix(".") && fileName.count > 1 && fileName != ".Trash" && fileName != ".DS_Store" {
+                let newName = String(fileName.dropFirst())
+                let newURL = clean.deletingLastPathComponent().appendingPathComponent(newName)
+                if !FileManager.default.fileExists(atPath: newURL.path) {
+                    try? FileManager.default.moveItem(at: clean, to: newURL)
+                    var st = Darwin.stat()
+                    if stat(newURL.path, &st) == 0 {
+                        let flags = st.st_flags & ~UInt32(UF_HIDDEN)
+                        _ = Darwin.chflags(newURL.path, flags)
+                    }
+                    continue
+                }
+            }
+
+            // Establecer recurso Foundation
+            var values = URLResourceValues()
+            values.isHidden = hidden
+            var mutableURL = clean
+            try? mutableURL.setResourceValues(values)
+
+            // Establecer flag POSIX / BSD UF_HIDDEN
+            var st = Darwin.stat()
+            if stat(path, &st) == 0 {
+                var flags = st.st_flags
+                if hidden {
+                    flags |= UInt32(UF_HIDDEN)
+                } else {
+                    flags &= ~UInt32(UF_HIDDEN)
+                }
+                _ = Darwin.chflags(path, flags)
+            }
+        }
     }
 
     // MARK: - Trash & Permanent Delete

@@ -193,7 +193,7 @@ public struct Win11CommandBarView: View {
                 Divider()
                 Section("Mostrar u ocultar") {
                     Toggle("Extensiones de nombre de archivo", isOn: $tab.showFileExtensions)
-                    Toggle("Elementos ocultos (.dotfiles)", isOn: Binding(
+                    Toggle("Elementos ocultos", isOn: Binding(
                         get: { tab.showHiddenFiles },
                         set: { newValue in
                             tab.showHiddenFiles = newValue

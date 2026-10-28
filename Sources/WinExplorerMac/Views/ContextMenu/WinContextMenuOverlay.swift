@@ -121,6 +121,8 @@ public struct Win11ContextMenuOverlay: View {
                 windowVM.quickAccess.togglePin(for: item.url)
                 windowVM.dismissContextMenu()
             }
+
+            customizeFolderMenu(for: item.url)
         } else {
             // "Abrir con..." submenu for files
             let apps = FileSystemService.shared.availableApplications(for: item.url).prefix(6)
@@ -222,6 +224,18 @@ public struct Win11ContextMenuOverlay: View {
             symbol: "macwindow"
         ) {
             FileSystemService.shared.revealInFinder(item.url)
+            windowVM.dismissContextMenu()
+        }
+
+        let isItemHidden = item.isHidden
+        contextMenuRow(
+            title: isItemHidden ? "Hacer visible (desocultar)" : "Ocultar",
+            symbol: isItemHidden ? "eye" : "eye.slash"
+        ) {
+            let targetURLs = tab.selectedURLs.isEmpty ? [item.url] : Array(tab.selectedURLs)
+            FileSystemService.shared.setHidden(!isItemHidden, for: targetURLs)
+            tab.statusMessage = isItemHidden ? "Elemento visible" : "Elemento ocultado"
+            tab.reload()
             windowVM.dismissContextMenu()
         }
 
@@ -355,6 +369,8 @@ public struct Win11ContextMenuOverlay: View {
                 windowVM.dismissContextMenu()
             }
 
+            customizeFolderMenu(for: dirURL)
+
             if FileSystemService.isCloudPath(dirURL.path) {
                 contextMenuRow(
                     title: "Liberar espacio de esta carpeta",
@@ -366,11 +382,73 @@ public struct Win11ContextMenuOverlay: View {
         }
 
         contextMenuRow(
+            title: tab.showHiddenFiles ? "Ocultar elementos ocultos" : "Mostrar elementos ocultos",
+            symbol: tab.showHiddenFiles ? "eye.slash" : "eye"
+        ) {
+            tab.showHiddenFiles.toggle()
+            tab.reload()
+            windowVM.dismissContextMenu()
+        }
+
+        Divider()
+            .padding(.vertical, 2)
+
+        contextMenuRow(
             title: "Propiedades",
             symbol: "info.circle"
         ) {
             windowVM.showProperties(for: nil)
         }
+    }
+
+    @ViewBuilder
+    private func customizeFolderMenu(for folderURL: URL) -> some View {
+        Menu {
+            Menu("Color de la carpeta") {
+                ForEach(FolderCustomColor.allCases) { color in
+                    Button {
+                        FolderCustomizationStore.shared.setColor(color, for: folderURL)
+                        windowVM.dismissContextMenu()
+                    } label: {
+                        HStack {
+                            Text(color.displayName)
+                            if FolderCustomizationStore.shared.customColor(for: folderURL) == color ||
+                               (FolderCustomizationStore.shared.customColor(for: folderURL) == nil && color == .yellow) {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button {
+                windowVM.dismissContextMenu()
+                FolderCustomizationStore.shared.promptChooseImage(for: folderURL)
+            } label: {
+                Label("Cambiar icono por imagen...", systemImage: "photo")
+            }
+
+            if FolderCustomizationStore.shared.hasCustomization(for: folderURL) {
+                Divider()
+                Button {
+                    FolderCustomizationStore.shared.resetCustomization(for: folderURL)
+                    windowVM.dismissContextMenu()
+                } label: {
+                    Label("Restaurar icono predeterminado", systemImage: "arrow.counterclockwise")
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "paintpalette")
+                    .frame(width: 16)
+                Text("Personalizar carpeta")
+                    .font(.system(size: 12.5))
+                Spacer()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+        }
+        .menuStyle(.borderlessButton)
     }
 
     // MARK: - Helper Subviews

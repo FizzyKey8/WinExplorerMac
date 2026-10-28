@@ -394,16 +394,26 @@ public struct Win11FolderIconView: View {
     public var size: CGFloat = 48
     public var badgeSymbol: String? = nil
     public var badgeColor: Color = Color(red: 0.0, green: 0.47, blue: 0.83)
+    public var customColor: FolderCustomColor? = nil
 
     @ObservedObject private var themeManager = ThemeManager.shared
 
-    public init(size: CGFloat = 48, badgeSymbol: String? = nil, badgeColor: Color = Color(red: 0.0, green: 0.47, blue: 0.83)) {
+    public init(
+        size: CGFloat = 48,
+        badgeSymbol: String? = nil,
+        badgeColor: Color = Color(red: 0.0, green: 0.47, blue: 0.83),
+        customColor: FolderCustomColor? = nil
+    ) {
         self.size = size
         self.badgeSymbol = badgeSymbol
         self.badgeColor = badgeColor
+        self.customColor = customColor
     }
 
     private var backTabColors: [Color] {
+        if let customColor {
+            return customColor.backTabColors
+        }
         switch themeManager.currentTheme {
         case .win:
             return [
@@ -424,6 +434,9 @@ public struct Win11FolderIconView: View {
     }
 
     private var backBodyColors: [Color] {
+        if let customColor {
+            return customColor.backBodyColors
+        }
         switch themeManager.currentTheme {
         case .win:
             return [
@@ -444,6 +457,9 @@ public struct Win11FolderIconView: View {
     }
 
     private var frontPlateColors: [Color] {
+        if let customColor {
+            return customColor.frontPlateColors
+        }
         switch themeManager.currentTheme {
         case .win:
             return [
@@ -549,6 +565,7 @@ public struct Win11ItemIconView: View {
 
     @State private var thumbnail: NSImage?
     @ObservedObject private var downloadManager = CloudDownloadManager.shared
+    @ObservedObject private var folderCustomStore = FolderCustomizationStore.shared
 
     public init(item: FileItem, size: CGFloat = 44) {
         self.item = item
@@ -557,14 +574,31 @@ public struct Win11ItemIconView: View {
     }
 
     public var body: some View {
-        Group {
+        let _ = folderCustomStore.changeVersion
+        return Group {
             if item.isDirectory {
-                let special = specialFolderBadge(for: item.url)
-                Win11FolderIconView(
-                    size: size,
-                    badgeSymbol: special?.symbol,
-                    badgeColor: special?.color ?? Color(red: 0.0, green: 0.47, blue: 0.83)
-                )
+                if let customImage = folderCustomStore.customImage(for: item.url) {
+                    Image(nsImage: customImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: size, height: size)
+                        .clipShape(RoundedRectangle(cornerRadius: max(3, size * 0.12), style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: max(3, size * 0.12), style: .continuous)
+                                .stroke(Color.primary.opacity(0.12), lineWidth: 0.6)
+                        )
+                        .shadow(color: Color.black.opacity(0.18), radius: max(1, size * 0.04), x: 0, y: 1)
+                } else {
+                    let customColor = folderCustomStore.customColor(for: item.url)
+                    let special = specialFolderBadge(for: item.url)
+                    Win11FolderIconView(
+                        size: size,
+                        badgeSymbol: special?.symbol,
+                        badgeColor: special?.color ?? Color(red: 0.0, green: 0.47, blue: 0.83),
+                        customColor: customColor
+                    )
+                }
             } else if item.isArchiveZip {
                 ZStack {
                     Win11FolderIconView(size: size, badgeSymbol: "doc.zipper", badgeColor: Color.orange)
@@ -615,6 +649,7 @@ public struct Win11ItemIconView: View {
                 }
             }
         }
+        .opacity(item.isHidden ? 0.55 : 1.0)
         .task(id: "\(item.url.path)|\(Int(size))") {
             let canLoadCloudPreview = item.isCloudDataless && (item.isImage || item.isVideo)
             guard (!item.isCloudDataless && (item.isImage || item.isVideo || item.isQuickLookThumbnailSupported)) || canLoadCloudPreview else {

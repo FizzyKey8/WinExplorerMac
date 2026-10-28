@@ -448,7 +448,7 @@ struct Win11GridItemCell: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .foregroundStyle(.primary)
-                    .opacity(isTextCoveredByRenaming ? 0 : 1)
+                    .opacity(isTextCoveredByRenaming ? 0 : (item.isHidden ? 0.60 : 1.0))
             }
         }
         .padding(8)
@@ -553,6 +553,7 @@ struct Win11ListItemRow: View {
                     Text(item.displayName(showExtensions: tab.showFileExtensions))
                         .font(.system(size: 12))
                         .lineLimit(1)
+                        .opacity(item.isHidden ? 0.60 : 1.0)
 
                     if let progress = downloadManager.progress(for: item) {
                         HStack(spacing: 4) {
