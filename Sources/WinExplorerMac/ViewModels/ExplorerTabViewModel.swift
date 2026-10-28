@@ -625,14 +625,21 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         renamingText = ""
 
         guard !proposedName.isEmpty, proposedName != targetURL.lastPathComponent else { return }
-        do {
-            let newURL = try FileSystemService.shared.renameItem(at: targetURL, to: proposedName)
-            QuickAccessStore.shared.updatePath(from: targetURL, to: newURL)
-            selectedURLs = [newURL]
-            lastClickedURL = newURL
-            reload()
-        } catch {
-            errorMessage = error.localizedDescription
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            do {
+                let newURL = try FileSystemService.shared.renameItem(at: targetURL, to: proposedName)
+                await MainActor.run {
+                    QuickAccessStore.shared.updatePath(from: targetURL, to: newURL)
+                    self.selectedURLs = [newURL]
+                    self.lastClickedURL = newURL
+                    self.reload()
+                }
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
