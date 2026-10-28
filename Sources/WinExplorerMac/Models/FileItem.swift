@@ -15,6 +15,13 @@ public extension URL {
         }
         return URL(fileURLWithPath: trimmed, isDirectory: self.hasDirectoryPath)
     }
+
+    /// Purely lexical child URL appending that never calls lstat or touches the filesystem.
+    func appendingLexically(_ component: String, isDirectory: Bool = false) -> URL {
+        let p = self.path
+        let slash = p.hasSuffix("/") ? "" : "/"
+        return URL(fileURLWithPath: p + slash + component, isDirectory: isDirectory)
+    }
 }
 
 public struct FileItem: Identifiable, Hashable, Sendable {

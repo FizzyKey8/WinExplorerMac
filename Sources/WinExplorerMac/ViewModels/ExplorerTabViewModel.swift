@@ -434,8 +434,17 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         }
     }
 
-    public func reload() {
-        loadCurrentDestination()
+    public func reload(clearExisting: Bool = true) {
+        loadCurrentDestination(clearExisting: clearExisting)
+    }
+
+    public func appendOptimisticPastedItems(_ newItems: [FileItem]) {
+        for item in newItems {
+            if !items.contains(where: { $0.url == item.url }) {
+                items.append(item)
+                displayedItems.append(item)
+            }
+        }
     }
 
     public func toggleSort(by field: ExplorerSortField) {

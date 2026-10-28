@@ -532,15 +532,32 @@ public final class ExplorerWindowViewModel: ObservableObject {
                 let pastedURLs = try FileSystemService.shared.copyOrMoveItems(
                     payload.urls,
                     to: destinationDir,
-                    isCutOperation: payload.isCut
+                    isCutOperation: payload.isCut,
+                    onProgress: { current, total, itemName in
+                        Task { @MainActor [weak self] in
+                            let action = payload.isCut ? "Moviendo" : "Pegando"
+                            self?.activeTab.statusMessage = "\(action) (\(current)/\(total)): \(itemName)..."
+                        }
+                    }
                 )
                 await MainActor.run {
                     self.clipboard.completeCutOperationIfNeeded()
-                    for tab in self.tabs {
-                        tab.reload()
+                    if self.activeTab.currentDirectoryURL == destinationDir {
+                        let itemsToInsert = pastedURLs.map { pastedURL in
+                            FileItem(
+                                url: pastedURL,
+                                name: pastedURL.lastPathComponent,
+                                isDirectory: false,
+                                isCloudDataless: FileSystemService.isCloudPath(pastedURL.path)
+                            )
+                        }
+                        self.activeTab.appendOptimisticPastedItems(itemsToInsert)
                     }
                     self.activeTab.selectedURLs = Set(pastedURLs)
                     self.activeTab.statusMessage = "\(pastedURLs.count) elemento(s) \(payload.isCut ? "movido(s)" : "pegado(s)")"
+                    for tab in self.tabs {
+                        tab.reload(clearExisting: false)
+                    }
                 }
             } catch {
                 await MainActor.run {

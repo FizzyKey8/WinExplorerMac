@@ -185,9 +185,9 @@ public final class FileSystemService {
     private let credentialsCacheFile = URL(fileURLWithPath: "/tmp/winexplorermac_clarodrive_creds.json", isDirectory: false)
     private let cloudOpenSession: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
-        cfg.timeoutIntervalForRequest = 20
-        cfg.timeoutIntervalForResource = 45
-        cfg.httpMaximumConnectionsPerHost = 4
+        cfg.timeoutIntervalForRequest = 60
+        cfg.timeoutIntervalForResource = 300
+        cfg.httpMaximumConnectionsPerHost = 6
         return URLSession(configuration: cfg)
     }()
 
@@ -664,7 +664,7 @@ public final class FileSystemService {
 
         var responseData: Data? = nil
         for targetURL in candidateURLs {
-            var req = URLRequest(url: targetURL, timeoutInterval: 20)
+            var req = URLRequest(url: targetURL, timeoutInterval: 60)
             req.httpMethod = "PROPFIND"
             req.setValue("Basic \(authBase64)", forHTTPHeaderField: "Authorization")
             req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
@@ -684,7 +684,7 @@ public final class FileSystemService {
                 sem.signal()
             }
             task.resume()
-            _ = sem.wait(timeout: .now() + 22)
+            _ = sem.wait(timeout: .now() + 65)
 
             if (200...299).contains(statusCode), let data = fetched, !data.isEmpty {
                 responseData = data
@@ -1236,7 +1236,7 @@ public final class FileSystemService {
     }
 
     private func uniqueClaroDriveCopyDestinationURL(for sourceURL: URL, in directory: URL) -> URL {
-        let proposed = directory.appendingPathComponent(sourceURL.lastPathComponent)
+        let proposed = directory.appendingLexically(sourceURL.lastPathComponent, isDirectory: false)
         guard let proposedWebDav = claroDriveEncodedWebDavURL(for: proposed),
               claroDriveWebDavItemExists(url: proposedWebDav) else {
             return proposed
@@ -1245,7 +1245,7 @@ public final class FileSystemService {
         let ext = sourceURL.pathExtension
         let stem = sourceURL.deletingPathExtension().lastPathComponent
         let firstCopyName = ext.isEmpty ? "\(stem) - copia" : "\(stem) - copia.\(ext)"
-        let firstCopyURL = directory.appendingPathComponent(firstCopyName)
+        let firstCopyURL = directory.appendingLexically(firstCopyName, isDirectory: false)
         guard let firstWebDav = claroDriveEncodedWebDavURL(for: firstCopyURL),
               claroDriveWebDavItemExists(url: firstWebDav) else {
             return firstCopyURL
@@ -1254,7 +1254,7 @@ public final class FileSystemService {
         var counter = 2
         while counter < 50 {
             let candidateName = ext.isEmpty ? "\(stem) - copia (\(counter))" : "\(stem) - copia (\(counter)).\(ext)"
-            let candidateURL = directory.appendingPathComponent(candidateName)
+            let candidateURL = directory.appendingLexically(candidateName, isDirectory: false)
             guard let candWebDav = claroDriveEncodedWebDavURL(for: candidateURL),
                   claroDriveWebDavItemExists(url: candWebDav) else {
                 return candidateURL
@@ -1324,7 +1324,7 @@ public final class FileSystemService {
             ])
         }
         let authBase64 = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
-        var req = URLRequest(url: targetWebDavURL, timeoutInterval: 120)
+        var req = URLRequest(url: targetWebDavURL, timeoutInterval: 180)
         req.httpMethod = "PUT"
         req.setValue("Basic \(authBase64)", forHTTPHeaderField: "Authorization")
         req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
@@ -1334,15 +1334,27 @@ public final class FileSystemService {
         var statusCode = 0
         var uploadError: Error? = nil
 
-        let task = cloudOpenSession.uploadTask(with: req, fromFile: localFileURL) { _, resp, err in
-            if let http = resp as? HTTPURLResponse {
-                statusCode = http.statusCode
+        if let data = try? Data(contentsOf: localFileURL), data.count < 30_000_000 {
+            req.httpBody = data
+            let task = cloudOpenSession.dataTask(with: req) { _, resp, err in
+                if let http = resp as? HTTPURLResponse {
+                    statusCode = http.statusCode
+                }
+                uploadError = err
+                sem.signal()
             }
-            uploadError = err
-            sem.signal()
+            task.resume()
+        } else {
+            let task = cloudOpenSession.uploadTask(with: req, fromFile: localFileURL) { _, resp, err in
+                if let http = resp as? HTTPURLResponse {
+                    statusCode = http.statusCode
+                }
+                uploadError = err
+                sem.signal()
+            }
+            task.resume()
         }
-        task.resume()
-        _ = sem.wait(timeout: .now() + 125)
+        _ = sem.wait(timeout: .now() + 190)
 
         if let err = uploadError {
             throw err
@@ -1365,7 +1377,7 @@ public final class FileSystemService {
             ])
         }
         let authBase64 = Data("\(creds.user):\(creds.password)".utf8).base64EncodedString()
-        var req = URLRequest(url: remoteWebDavURL, timeoutInterval: 120)
+        var req = URLRequest(url: remoteWebDavURL, timeoutInterval: 45)
         req.setValue("Basic \(authBase64)", forHTTPHeaderField: "Authorization")
         req.setValue(creds.userAgent, forHTTPHeaderField: "User-Agent")
 
@@ -1393,10 +1405,48 @@ public final class FileSystemService {
             }
         }
         task.resume()
-        _ = sem.wait(timeout: .now() + 125)
+        _ = sem.wait(timeout: .now() + 50)
 
         if let err = downloadError {
             throw err
+        }
+    }
+
+    private func copyClaroDriveItemToClaroDrive(
+        from srcURL: URL,
+        to destURL: URL,
+        srcItemWebDav: URL,
+        destItemWebDav: URL,
+        isCutOperation: Bool
+    ) throws {
+        if isCutOperation {
+            // MOVE en Nextcloud es solo actualización de metadatos (rápido en ~1s)
+            do {
+                try executeClaroDriveWebDavRequest(
+                    url: srcItemWebDav,
+                    method: "MOVE",
+                    headers: [
+                        "Destination": destItemWebDav.absoluteString,
+                        "Overwrite": "T"
+                    ]
+                )
+                return
+            } catch {
+                // Si MOVE falla, usamos GET -> PUT -> DELETE como fallback
+            }
+        }
+
+        // Para COPY: WebDAV COPY satura y bloquea SabreDAV en carpetas de 40k archivos en Nextcloud.
+        // En su lugar, descargamos el archivo por GET (~0.2s) y lo subimos por PUT (~0.5s). ¡Rápido y sin bloqueos!
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let tempFile = tempDir.appendingPathComponent(UUID().uuidString + "_" + srcURL.lastPathComponent)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        try downloadFileFromClaroDriveWebDav(from: srcItemWebDav, to: tempFile)
+        try uploadFileToClaroDriveWebDav(from: tempFile, to: destItemWebDav)
+
+        if isCutOperation {
+            try? executeClaroDriveWebDavRequest(url: srcItemWebDav, method: "DELETE")
         }
     }
 
@@ -1422,7 +1472,7 @@ public final class FileSystemService {
                 let data = template.defaultContents.data(using: .utf8) ?? Data()
                 try executeClaroDriveWebDavRequest(url: targetWebDav, method: "PUT", headers: ["Content-Type": "text/plain"], body: data)
             }
-            return stdDir.appendingPathComponent(fullName)
+            return stdDir.appendingLexically(fullName, isDirectory: template == .folder)
         }
 
         let targetURL = uniqueDestinationURL(forBaseName: template.defaultBaseName, in: directory)
@@ -1445,7 +1495,7 @@ public final class FileSystemService {
             ])
         }
         let stdURL = url.cleanFileURL
-        let destination = stdURL.deletingLastPathComponent().appendingPathComponent(trimmed)
+        let destination = stdURL.deletingLastPathComponent().appendingLexically(trimmed, isDirectory: false)
         if destination.standardizedFileURL == stdURL.standardizedFileURL {
             return url
         }
@@ -1470,18 +1520,26 @@ public final class FileSystemService {
 
     // MARK: - Copy / Move (Paste)
     @discardableResult
-    public func copyOrMoveItems(_ sourceURLs: [URL], to destinationDirectory: URL, isCutOperation: Bool) throws -> [URL] {
+    public func copyOrMoveItems(
+        _ sourceURLs: [URL],
+        to destinationDirectory: URL,
+        isCutOperation: Bool,
+        onProgress: ((Int, Int, String) -> Void)? = nil
+    ) throws -> [URL] {
         var resultingURLs: [URL] = []
         let dstDirStd = destinationDirectory.cleanFileURL
         let destIsClaro = claroDriveServerUrl(for: dstDirStd) != nil
+        let totalCount = sourceURLs.count
 
-        for srcURL in sourceURLs {
+        for (index, srcURL) in sourceURLs.enumerated() {
             let srcStd = srcURL.cleanFileURL
+            let fileName = srcStd.lastPathComponent
+            onProgress?(index + 1, totalCount, fileName)
+
             let srcIsClaro = claroDriveServerUrl(for: srcStd) != nil
 
             if destIsClaro {
-                let fileName = srcStd.lastPathComponent
-                let proposedDest = dstDirStd.appendingPathComponent(fileName)
+                let proposedDest = dstDirStd.appendingLexically(fileName, isDirectory: false)
                 let finalDestLocal: URL
                 if isCutOperation {
                     finalDestLocal = proposedDest
@@ -1492,16 +1550,14 @@ public final class FileSystemService {
                 guard let destItemWebDav = claroDriveEncodedWebDavURL(for: finalDestLocal) else { continue }
 
                 if srcIsClaro {
-                    // Claro drive -> Claro drive: WebDAV COPY / MOVE en el servidor
+                    // Claro drive -> Claro drive: Fast GET then PUT (avoids WebDAV COPY deadlock on large directories)
                     guard let srcItemWebDav = claroDriveEncodedWebDavURL(for: srcStd) else { continue }
-                    let method = isCutOperation ? "MOVE" : "COPY"
-                    try executeClaroDriveWebDavRequest(
-                        url: srcItemWebDav,
-                        method: method,
-                        headers: [
-                            "Destination": destItemWebDav.absoluteString,
-                            "Overwrite": "T"
-                        ]
+                    try copyClaroDriveItemToClaroDrive(
+                        from: srcStd,
+                        to: finalDestLocal,
+                        srcItemWebDav: srcItemWebDav,
+                        destItemWebDav: destItemWebDav,
+                        isCutOperation: isCutOperation
                     )
                 } else {
                     // Local -> Claro drive: WebDAV PUT (subida directa a la nube sin bloquear VFS)
@@ -1513,9 +1569,8 @@ public final class FileSystemService {
                 }
                 resultingURLs.append(finalDestLocal)
             } else if srcIsClaro {
-                // Claro drive -> Local: WebDAV GET download
+                // Claro drive -> Local: WebDAV download
                 guard let srcItemWebDav = claroDriveEncodedWebDavURL(for: srcStd) else { continue }
-                let fileName = srcStd.lastPathComponent
                 let localProposed = dstDirStd.appendingPathComponent(fileName)
                 let localFinal = fileManager.fileExists(atPath: localProposed.path)
                     ? uniqueCopyDestinationURL(for: srcStd, in: dstDirStd, suffix: isCutOperation ? "" : " - copia")
