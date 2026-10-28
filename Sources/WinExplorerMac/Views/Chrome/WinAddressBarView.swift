@@ -124,41 +124,28 @@ public struct Win11AddressBarView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 2) {
                                     ForEach(Array(tab.breadcrumbSegments.enumerated()), id: \.offset) { idx, segment in
-                                        if idx > 0 {
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundStyle(.secondary)
-                                                .padding(.horizontal, 2)
-                                        }
-                                        Button {
+                                        BreadcrumbSegmentButton(title: segment.title) {
                                             tab.navigate(to: segment.destination)
-                                        } label: {
-                                            Text(segment.title)
-                                                .font(.system(size: 12))
-                                                .lineLimit(1)
-                                                .fixedSize(horizontal: true, vertical: false)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 3)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                                        .fill(Color.primary.opacity(0.001))
-                                                )
                                         }
-                                        .buttonStyle(.plain)
-                                        .id(idx)
+                                        .id("seg-\(idx)")
+
+                                        BreadcrumbChevronMenu(destination: segment.destination, tab: tab)
+                                            .id("chev-\(idx)")
                                     }
                                 }
                                 .padding(.trailing, 6)
                             }
                             .onAppear {
                                 if let lastIdx = tab.breadcrumbSegments.indices.last {
-                                    scrollProxy.scrollTo(lastIdx, anchor: .trailing)
+                                    scrollProxy.scrollTo("chev-\(lastIdx)", anchor: .trailing)
                                 }
                             }
                             .onChange(of: tab.destination) {
                                 DispatchQueue.main.async {
                                     if let lastIdx = tab.breadcrumbSegments.indices.last {
-                                        scrollProxy.scrollTo(lastIdx, anchor: .trailing)
+                                        withAnimation(.easeInOut(duration: 0.15)) {
+                                            scrollProxy.scrollTo("chev-\(lastIdx)", anchor: .trailing)
+                                        }
                                     }
                                 }
                             }
@@ -260,5 +247,125 @@ public struct Win11AddressBarView: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .help(tooltip)
+    }
+}
+
+private struct BreadcrumbSegmentButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(isHovered ? Color.primary.opacity(0.06) : Color.primary.opacity(0.001))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+}
+
+private struct BreadcrumbChevronMenu: View {
+    let destination: NavigationDestination
+    @ObservedObject var tab: ExplorerTabViewModel
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        Menu {
+            let items = fetchSubfolders(for: destination)
+            if items.isEmpty {
+                Text("Sin subcarpetas")
+            } else {
+                ForEach(items, id: \.destination) { sub in
+                    Button {
+                        tab.navigate(to: sub.destination)
+                    } label: {
+                        Label(sub.title, systemImage: "folder")
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8.5, weight: .semibold))
+                .foregroundStyle(isHovered ? Color.primary : Color.secondary.opacity(0.75))
+                .frame(width: 14, height: 22)
+                .background(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .menuIndicator(.hidden)
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .onHover { isHovered = $0 }
+        .help("Mostrar subcarpetas")
+    }
+
+    private func fetchSubfolders(for dest: NavigationDestination) -> [(title: String, destination: NavigationDestination)] {
+        switch dest {
+        case .home:
+            return QuickAccessStore.shared.pinnedFolders.map {
+                ($0.title, .directory($0.url))
+            }
+
+        case .thisPC:
+            var result: [(title: String, destination: NavigationDestination)] = []
+            let home = FileManager.default.homeDirectoryForCurrentUser.cleanFileURL
+            let standardLibs: [(String, String)] = [
+                ("Desktop", "Escritorio"),
+                ("Downloads", "Descargas"),
+                ("Documents", "Documentos"),
+                ("Pictures", "Imágenes"),
+                ("Music", "Música"),
+                ("Movies", "Videos"),
+                (".Trash", "Papelera")
+            ]
+            for (folder, localized) in standardLibs {
+                let url = home.appendingPathComponent(folder, isDirectory: true).cleanFileURL
+                if FileManager.default.fileExists(atPath: url.path) || folder == ".Trash" {
+                    result.append((localized, .directory(url)))
+                }
+            }
+            for vol in FileSystemService.shared.mountedVolumes() {
+                result.append((vol.name, .directory(vol.url)))
+            }
+            for cloud in FileSystemService.shared.cloudDrives() {
+                result.append((cloud.name, .directory(cloud.url)))
+            }
+            return result
+
+        case .directory(let url):
+            let stdURL = url.cleanFileURL
+            guard let entries = try? FileManager.default.contentsOfDirectory(
+                at: stdURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey, .isHiddenKey],
+                options: [.skipsHiddenFiles]
+            ) else { return [] }
+
+            var folders: [(title: String, destination: NavigationDestination)] = []
+            for itemURL in entries {
+                let stdItem = itemURL.cleanFileURL
+                guard let vals = try? stdItem.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey, .isHiddenKey]) else {
+                    continue
+                }
+                if vals.isHidden == true { continue }
+                if vals.isDirectory == true && vals.isPackage != true {
+                    let name = NavigationDestination.localizedFolderName(for: stdItem)
+                    folders.append((name, .directory(stdItem)))
+                }
+            }
+            folders.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+            return folders
+        }
     }
 }
