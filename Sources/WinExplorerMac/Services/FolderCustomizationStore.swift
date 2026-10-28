@@ -155,7 +155,7 @@ public final class FolderCustomizationStore: ObservableObject {
     }
 
     private func cleanKey(for url: URL) -> String {
-        url.standardizedFileURL.resolvingSymlinksInPath().cleanFileURL.path
+        url.cleanFileURL.path
     }
 
     private func loadRecords() {

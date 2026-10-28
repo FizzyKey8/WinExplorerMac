@@ -465,15 +465,22 @@ public final class ExplorerWindowViewModel: ObservableObject {
     public func createNewItem(_ template: NewItemTemplate) {
         activeContextMenu = nil
         guard let dir = activeTab.currentDirectoryURL else { return }
-        do {
-            let newURL = try FileSystemService.shared.createNewItem(in: dir, template: template)
-            activeTab.reload()
-            activeTab.selectedURLs = [newURL]
-            if let createdItem = FileSystemService.shared.makeFileItem(from: newURL) {
-                activeTab.beginRename(for: createdItem)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            do {
+                let newURL = try FileSystemService.shared.createNewItem(in: dir, template: template)
+                await MainActor.run {
+                    self.activeTab.reload()
+                    self.activeTab.selectedURLs = [newURL]
+                    if let createdItem = FileSystemService.shared.makeFileItem(from: newURL) {
+                        self.activeTab.beginRename(for: createdItem)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.activeTab.errorMessage = error.localizedDescription
+                }
             }
-        } catch {
-            activeTab.errorMessage = error.localizedDescription
         }
     }
 
@@ -499,15 +506,13 @@ public final class ExplorerWindowViewModel: ObservableObject {
         let targetFolder: URL?
         if let override = targetFolderOverride {
             targetFolder = override
+        } else if activeTab.selectedURLs.count == 1,
+                  let selected = activeTab.selectedURLs.first,
+                  let selectedItem = activeTab.items.first(where: { $0.url == selected }),
+                  selectedItem.isDirectory {
+            targetFolder = selected
         } else if let currentDir = activeTab.currentDirectoryURL {
             targetFolder = currentDir
-        } else if activeTab.selectedURLs.count == 1, let selected = activeTab.selectedURLs.first {
-            var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: selected.path, isDirectory: &isDir), isDir.boolValue {
-                targetFolder = selected
-            } else {
-                targetFolder = nil
-            }
         } else {
             targetFolder = nil
         }
@@ -516,20 +521,50 @@ public final class ExplorerWindowViewModel: ObservableObject {
         let payload = clipboard.currentItemsForPaste()
         guard !payload.urls.isEmpty else { return }
 
-        do {
-            let pastedURLs = try FileSystemService.shared.copyOrMoveItems(
-                payload.urls,
-                to: destinationDir,
-                isCutOperation: payload.isCut
-            )
-            clipboard.completeCutOperationIfNeeded()
-            for tab in tabs {
-                tab.reload()
+        let count = payload.urls.count
+        activeTab.statusMessage = payload.isCut
+            ? "Moviendo \(count) elemento(s)..."
+            : "Pegando \(count) elemento(s)..."
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            do {
+                let pastedURLs = try FileSystemService.shared.copyOrMoveItems(
+                    payload.urls,
+                    to: destinationDir,
+                    isCutOperation: payload.isCut,
+                    onProgress: { current, total, itemName in
+                        Task { @MainActor [weak self] in
+                            let action = payload.isCut ? "Moviendo" : "Pegando"
+                            self?.activeTab.statusMessage = "\(action) (\(current)/\(total)): \(itemName)..."
+                        }
+                    }
+                )
+                await MainActor.run {
+                    self.clipboard.completeCutOperationIfNeeded()
+                    if self.activeTab.currentDirectoryURL == destinationDir {
+                        let itemsToInsert = pastedURLs.map { pastedURL in
+                            FileItem(
+                                url: pastedURL,
+                                name: pastedURL.lastPathComponent,
+                                isDirectory: false,
+                                isCloudDataless: FileSystemService.isCloudPath(pastedURL.path)
+                            )
+                        }
+                        self.activeTab.appendOptimisticPastedItems(itemsToInsert)
+                    }
+                    self.activeTab.selectedURLs = Set(pastedURLs)
+                    self.activeTab.statusMessage = "\(pastedURLs.count) elemento(s) \(payload.isCut ? "movido(s)" : "pegado(s)")"
+                    for tab in self.tabs {
+                        tab.reload(clearExisting: false)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.activeTab.errorMessage = error.localizedDescription
+                    self.activeTab.statusMessage = nil
+                }
             }
-            activeTab.selectedURLs = Set(pastedURLs)
-            activeTab.statusMessage = "\(pastedURLs.count) elemento(s) pegado(s)"
-        } catch {
-            activeTab.errorMessage = error.localizedDescription
         }
     }
 
@@ -537,15 +572,22 @@ public final class ExplorerWindowViewModel: ObservableObject {
         activeContextMenu = nil
         let urls = Array(activeTab.selectedURLs)
         guard !urls.isEmpty else { return }
-        do {
-            try FileSystemService.shared.moveToTrash(urls)
-            for url in urls {
-                quickAccess.removeRecentFile(url)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self else { return }
+            do {
+                try FileSystemService.shared.moveToTrash(urls)
+                await MainActor.run {
+                    for url in urls {
+                        self.quickAccess.removeRecentFile(url)
+                    }
+                    self.activeTab.selectedURLs.removeAll()
+                    self.activeTab.reload()
+                }
+            } catch {
+                await MainActor.run {
+                    self.activeTab.errorMessage = error.localizedDescription
+                }
             }
-            activeTab.selectedURLs.removeAll()
-            activeTab.reload()
-        } catch {
-            activeTab.errorMessage = error.localizedDescription
         }
     }
 
