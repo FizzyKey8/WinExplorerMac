@@ -203,7 +203,9 @@ public struct Win11FolderContentView: View {
                     .padding(16)
                 }
                 .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
+                .win11ScrollBar()
             }
+            .scrollIndicators(.visible)
             .onChange(of: tab.lastClickedURL) { _, targetURL in
                 if let targetURL {
                     withAnimation(.easeInOut(duration: 0.15)) {
@@ -252,7 +254,9 @@ public struct Win11FolderContentView: View {
                     .padding(14)
                 }
                 .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
+                .win11ScrollBar()
             }
+            .scrollIndicators(.visible)
             .onChange(of: tab.lastClickedURL) { _, targetURL in
                 if let targetURL {
                     withAnimation(.easeInOut(duration: 0.15)) {
@@ -323,7 +327,9 @@ public struct Win11FolderContentView: View {
                         .padding(.vertical, 4)
                     }
                     .frame(maxWidth: .infinity, minHeight: 500, alignment: .topLeading)
+                    .win11ScrollBar()
                 }
+                .scrollIndicators(.visible)
                 .onChange(of: tab.lastClickedURL) { _, targetURL in
                     if let targetURL {
                         withAnimation(.easeInOut(duration: 0.15)) {
