@@ -157,6 +157,14 @@ public struct MainExplorerWindowView: View {
         )
     }
 
+    private func isEditingTextOrRenaming(for tab: ExplorerTabViewModel) -> Bool {
+        if tab.renamingURL != nil || windowVM.isEditingAddressBar {
+            return true
+        }
+        guard let responder = NSApp.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField || responder is NSText
+    }
+
     @ViewBuilder
     private func keyboardShortcutsResponder(for tab: ExplorerTabViewModel) -> some View {
         Group {
@@ -174,25 +182,46 @@ public struct MainExplorerWindowView: View {
 
             // Cut: Cmd + X
             Button("") {
-                windowVM.cutSelection()
+                if isEditingTextOrRenaming(for: tab) {
+                    NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: nil)
+                } else {
+                    windowVM.cutSelection()
+                }
             }
             .keyboardShortcut("x", modifiers: [.command])
 
             // Copy: Cmd + C
             Button("") {
-                windowVM.copySelection()
+                if isEditingTextOrRenaming(for: tab) {
+                    if let editor = (NSApp.keyWindow?.firstResponder as? NSTextView) ?? (NSApp.keyWindow?.firstResponder as? NSText),
+                       editor.selectedRange.length > 0 {
+                        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+                    } else if tab.renamingURL != nil && !tab.renamingText.isEmpty {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(tab.renamingText, forType: .string)
+                    } else {
+                        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil)
+                    }
+                } else {
+                    windowVM.copySelection()
+                }
             }
             .keyboardShortcut("c", modifiers: [.command])
 
             // Paste: Cmd + V
             Button("") {
-                windowVM.pasteIntoCurrentDirectory()
+                if isEditingTextOrRenaming(for: tab) {
+                    NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil)
+                } else {
+                    windowVM.pasteIntoCurrentDirectory()
+                }
             }
             .keyboardShortcut("v", modifiers: [.command])
 
             // Copy as Path: Cmd + Shift + C
             Button("") {
-                if !tab.selectedURLs.isEmpty {
+                if !isEditingTextOrRenaming(for: tab) && !tab.selectedURLs.isEmpty {
                     FileSystemService.shared.copyPathToPasteboard(Array(tab.selectedURLs), quoted: true)
                     tab.statusMessage = "Ruta copiada al portapapeles"
                 }
@@ -207,7 +236,11 @@ public struct MainExplorerWindowView: View {
 
             // Move to Trash: Cmd + Delete (Backspace)
             Button("") {
-                windowVM.moveSelectedToTrash()
+                if isEditingTextOrRenaming(for: tab) {
+                    NSApp.sendAction(#selector(NSText.delete(_:)), to: nil, from: nil)
+                } else {
+                    windowVM.moveSelectedToTrash()
+                }
             }
             .keyboardShortcut(.delete, modifiers: [.command])
 
@@ -244,7 +277,11 @@ public struct MainExplorerWindowView: View {
 
             // Select All: Cmd + A
             Button("") {
-                tab.selectAll()
+                if isEditingTextOrRenaming(for: tab) {
+                    NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+                } else {
+                    tab.selectAll()
+                }
             }
             .keyboardShortcut("a", modifiers: [.command])
 

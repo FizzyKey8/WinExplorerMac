@@ -96,6 +96,49 @@ public struct Win11RenameTextField: NSViewRepresentable {
                 }
             }
         }
+
+        public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            if event.modifierFlags.contains(.command) {
+                let chars = event.charactersIgnoringModifiers?.lowercased()
+                if chars == "c" {
+                    if let editor = currentEditor() as? NSTextView, editor.selectedRange.length > 0 {
+                        editor.copy(nil)
+                    } else if !stringValue.isEmpty {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(stringValue, forType: .string)
+                    } else {
+                        NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self)
+                    }
+                    return true
+                }
+                if chars == "x" {
+                    if let editor = currentEditor() as? NSTextView, editor.selectedRange.length > 0 {
+                        editor.cut(nil)
+                    } else {
+                        NSApp.sendAction(#selector(NSText.cut(_:)), to: nil, from: self)
+                    }
+                    return true
+                }
+                if chars == "v" {
+                    if let editor = currentEditor() as? NSTextView {
+                        editor.paste(nil)
+                    } else {
+                        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: self)
+                    }
+                    return true
+                }
+                if chars == "a" {
+                    if let editor = currentEditor() {
+                        editor.selectAll(nil)
+                    } else {
+                        selectText(nil)
+                    }
+                    return true
+                }
+            }
+            return super.performKeyEquivalent(with: event)
+        }
     }
 
     public final class Coordinator: NSObject, NSTextFieldDelegate {
