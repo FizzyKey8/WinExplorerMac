@@ -120,35 +120,54 @@ public struct Win11AddressBarView: View {
                             .padding(.leading, 8)
                             .padding(.trailing, 4)
 
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 2) {
-                                ForEach(Array(tab.breadcrumbSegments.enumerated()), id: \.offset) { idx, segment in
-                                    if idx > 0 {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 9, weight: .semibold))
-                                            .foregroundStyle(.secondary)
-                                            .padding(.horizontal, 2)
+                        ScrollViewReader { scrollProxy in
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 2) {
+                                    ForEach(Array(tab.breadcrumbSegments.enumerated()), id: \.offset) { idx, segment in
+                                        if idx > 0 {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundStyle(.secondary)
+                                                .padding(.horizontal, 2)
+                                        }
+                                        Button {
+                                            tab.navigate(to: segment.destination)
+                                        } label: {
+                                            Text(segment.title)
+                                                .font(.system(size: 12))
+                                                .lineLimit(1)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 3)
+                                                .background(
+                                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                        .fill(Color.primary.opacity(0.001))
+                                                )
+                                        }
+                                        .buttonStyle(.plain)
+                                        .id(idx)
                                     }
-                                    Button {
-                                        tab.navigate(to: segment.destination)
-                                    } label: {
-                                        Text(segment.title)
-                                            .font(.system(size: 12))
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 3)
-                                            .background(
-                                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                                    .fill(Color.primary.opacity(0.001))
-                                            )
+                                }
+                                .padding(.trailing, 6)
+                            }
+                            .onAppear {
+                                if let lastIdx = tab.breadcrumbSegments.indices.last {
+                                    scrollProxy.scrollTo(lastIdx, anchor: .trailing)
+                                }
+                            }
+                            .onChange(of: tab.destination) {
+                                DispatchQueue.main.async {
+                                    if let lastIdx = tab.breadcrumbSegments.indices.last {
+                                        scrollProxy.scrollTo(lastIdx, anchor: .trailing)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }
+                        .layoutPriority(1)
 
                         // Clicking empty area in breadcrumb bar activates path editing like Windows 11
                         Color.clear
-                            .frame(minWidth: 40, maxHeight: .infinity)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 addressText = tab.destination.addressBarString

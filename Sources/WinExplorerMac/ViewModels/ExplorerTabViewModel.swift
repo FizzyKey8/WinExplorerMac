@@ -257,6 +257,36 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
                 }
             }
 
+            // Check standard user library folders for clean Windows 11 breadcrumbs under "Este equipo"
+            let home = FileManager.default.homeDirectoryForCurrentUser.cleanFileURL
+            let standardLibraries: [(String, String)] = [
+                ("Documents", "Documentos"),
+                ("Downloads", "Descargas"),
+                ("Desktop", "Escritorio"),
+                ("Pictures", "Imágenes"),
+                ("Music", "Música"),
+                ("Movies", "Videos"),
+                (".Trash", "Papelera")
+            ]
+
+            for (folderName, localizedTitle) in standardLibraries {
+                let libURL = home.appendingPathComponent(folderName, isDirectory: true).cleanFileURL
+                if std.path == libURL.path || std.path.hasPrefix(libURL.path + "/") {
+                    var segments: [(String, NavigationDestination)] = [
+                        ("Este equipo", .thisPC),
+                        (localizedTitle, .directory(libURL))
+                    ]
+                    let relative = String(std.path.dropFirst(libURL.path.count))
+                    let subComponents = relative.split(separator: "/").map(String.init)
+                    var runningURL = libURL
+                    for sub in subComponents {
+                        runningURL = runningURL.appendingPathComponent(sub, isDirectory: true)
+                        segments.append((NavigationDestination.localizedFolderName(for: runningURL), .directory(runningURL)))
+                    }
+                    return segments
+                }
+            }
+
             var segments: [(String, NavigationDestination)] = [("Este equipo", .thisPC)]
             let components = std.pathComponents
             var currentPath = ""
