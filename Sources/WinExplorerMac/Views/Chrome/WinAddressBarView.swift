@@ -129,8 +129,10 @@ public struct Win11AddressBarView: View {
                                         }
                                         .id("seg-\(idx)")
 
-                                        BreadcrumbChevronMenu(destination: segment.destination, tab: tab)
-                                            .id("chev-\(idx)")
+                                        BreadcrumbChevronMenu(destination: segment.destination) { targetDest in
+                                            tab.navigate(to: targetDest)
+                                        }
+                                        .id("chev-\(idx)")
                                     }
                                 }
                                 .padding(.trailing, 6)
@@ -274,25 +276,25 @@ private struct BreadcrumbSegmentButton: View {
     }
 }
 
+private final class BreadcrumbMenuActionHelper: NSObject {
+    static let shared = BreadcrumbMenuActionHelper()
+    var currentHandler: ((NavigationDestination) -> Void)?
+
+    @objc func didSelectFolder(_ sender: NSMenuItem) {
+        if let dest = sender.representedObject as? NavigationDestination {
+            currentHandler?(dest)
+        }
+    }
+}
+
 private struct BreadcrumbChevronMenu: View {
     let destination: NavigationDestination
-    @ObservedObject var tab: ExplorerTabViewModel
+    let onNavigate: (NavigationDestination) -> Void
     @State private var isHovered: Bool = false
 
     var body: some View {
-        Menu {
-            let items = fetchSubfolders(for: destination)
-            if items.isEmpty {
-                Text("Sin subcarpetas")
-            } else {
-                ForEach(items, id: \.destination) { sub in
-                    Button {
-                        tab.navigate(to: sub.destination)
-                    } label: {
-                        Label(sub.title, systemImage: "folder")
-                    }
-                }
-            }
+        Button {
+            presentSubfoldersMenu()
         } label: {
             Image(systemName: "chevron.right")
                 .font(.system(size: 8.5, weight: .semibold))
@@ -304,11 +306,40 @@ private struct BreadcrumbChevronMenu: View {
                 )
                 .contentShape(Rectangle())
         }
-        .menuIndicator(.hidden)
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
         .fixedSize()
         .onHover { isHovered = $0 }
         .help("Mostrar subcarpetas")
+    }
+
+    private func presentSubfoldersMenu() {
+        let menu = NSMenu(title: "Subcarpetas")
+        let items = fetchSubfolders(for: destination)
+        BreadcrumbMenuActionHelper.shared.currentHandler = onNavigate
+
+        if items.isEmpty {
+            let empty = NSMenuItem(title: "Sin subcarpetas", action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        } else {
+            for sub in items {
+                let menuItem = NSMenuItem(
+                    title: sub.title,
+                    action: #selector(BreadcrumbMenuActionHelper.didSelectFolder(_:)),
+                    keyEquivalent: ""
+                )
+                menuItem.target = BreadcrumbMenuActionHelper.shared
+                menuItem.representedObject = sub.destination
+                menuItem.image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+                menu.addItem(menuItem)
+            }
+        }
+
+        if let event = NSApp.currentEvent, let window = NSApp.keyWindow, let contentView = window.contentView {
+            NSMenu.popUpContextMenu(menu, with: event, for: contentView)
+        } else {
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        }
     }
 
     private func fetchSubfolders(for dest: NavigationDestination) -> [(title: String, destination: NavigationDestination)] {
@@ -345,24 +376,20 @@ private struct BreadcrumbChevronMenu: View {
             return result
 
         case .directory(let url):
-            let stdURL = url.cleanFileURL
-            guard let entries = try? FileManager.default.contentsOfDirectory(
-                at: stdURL,
-                includingPropertiesForKeys: [.isDirectoryKey, .isPackageKey, .isHiddenKey],
-                options: [.skipsHiddenFiles]
-            ) else { return [] }
-
             var folders: [(title: String, destination: NavigationDestination)] = []
-            for itemURL in entries {
-                let stdItem = itemURL.cleanFileURL
-                guard let vals = try? stdItem.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey, .isHiddenKey]) else {
-                    continue
+            _ = try? FileSystemService.shared.streamContentsOfDirectory(
+                at: url,
+                includeHidden: false,
+                directoriesOnly: true,
+                firstBatchSize: 100,
+                subsequentBatchSize: 200
+            ) { batch, _ in
+                for item in batch where item.isDirectory {
+                    let name = NavigationDestination.localizedFolderName(for: item.url)
+                    folders.append((name, .directory(item.url)))
+                    if folders.count >= 100 { return false }
                 }
-                if vals.isHidden == true { continue }
-                if vals.isDirectory == true && vals.isPackage != true {
-                    let name = NavigationDestination.localizedFolderName(for: stdItem)
-                    folders.append((name, .directory(stdItem)))
-                }
+                return folders.count < 100
             }
             folders.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
             return folders
