@@ -24,8 +24,8 @@ git add -f build/WinExplorerMac.dmg
 git commit -m "chore(release): ${TAG_NAME} - ${RELEASE_MSG}" || echo "ℹ️ Sin cambios nuevos por commitear."
 git tag -f -a "${TAG_NAME}" -m "${RELEASE_MSG}"
 
-echo "🚀 Subiendo rama main y tag ${TAG_NAME} a GitHub (origin)..."
-git push origin main
+echo "🚀 Subiendo rama master y tag ${TAG_NAME} a GitHub (origin)..."
+git push origin master
 git push origin "${TAG_NAME}" --force
 
 echo ""
