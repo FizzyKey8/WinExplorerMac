@@ -96,6 +96,8 @@ public final class ExplorerWindowViewModel: ObservableObject {
         let newTab = ExplorerTabViewModel(
             initialDestination: dest,
             viewMode: inheritedTab.viewMode,
+            sortField: inheritedTab.sortField,
+            sortAscending: inheritedTab.sortAscending,
             showHiddenFiles: inheritedTab.showHiddenFiles,
             showFileExtensions: inheritedTab.showFileExtensions
         )
@@ -165,6 +167,8 @@ public final class ExplorerWindowViewModel: ObservableObject {
         let newTab = ExplorerTabViewModel(
             initialDestination: destination,
             viewMode: inheritedTab.viewMode,
+            sortField: inheritedTab.sortField,
+            sortAscending: inheritedTab.sortAscending,
             showHiddenFiles: inheritedTab.showHiddenFiles,
             showFileExtensions: inheritedTab.showFileExtensions
         )
@@ -178,6 +182,8 @@ public final class ExplorerWindowViewModel: ObservableObject {
         let duplicated = ExplorerTabViewModel(
             initialDestination: tab.destination,
             viewMode: tab.viewMode,
+            sortField: tab.sortField,
+            sortAscending: tab.sortAscending,
             showHiddenFiles: tab.showHiddenFiles,
             showFileExtensions: tab.showFileExtensions
         )

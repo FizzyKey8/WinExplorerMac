@@ -26,21 +26,29 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     @Published public var viewMode: ExplorerViewMode = .details {
         didSet {
             if oldValue != viewMode {
-                FolderViewSettingsStore.shared.setViewMode(viewMode, for: destination)
+                if !isNavigating {
+                    FolderViewSettingsStore.shared.setViewMode(viewMode, for: destination)
+                }
             }
         }
     }
     @Published public var sortField: ExplorerSortField = .name {
         didSet {
             if oldValue != sortField {
-                scheduleDisplayedItemsRefresh()
+                if !isNavigating {
+                    FolderViewSettingsStore.shared.setSortSettings(field: sortField, ascending: sortAscending, for: destination)
+                    scheduleDisplayedItemsRefresh()
+                }
             }
         }
     }
     @Published public var sortAscending: Bool = true {
         didSet {
             if oldValue != sortAscending {
-                scheduleDisplayedItemsRefresh()
+                if !isNavigating {
+                    FolderViewSettingsStore.shared.setSortSettings(field: sortField, ascending: sortAscending, for: destination)
+                    scheduleDisplayedItemsRefresh()
+                }
             }
         }
     }
@@ -53,6 +61,7 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     @Published public var statusMessage: String? = nil
     @Published public var errorMessage: String? = nil
 
+    private var isNavigating: Bool = false
     private var directoryMonitorSource: DispatchSourceFileSystemObject?
     private var directoryFileDescriptor: Int32 = -1
     private var loadTask: Task<Void, Never>?
@@ -64,6 +73,8 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         id: UUID = UUID(),
         initialDestination: NavigationDestination = .home,
         viewMode: ExplorerViewMode? = nil,
+        sortField: ExplorerSortField? = nil,
+        sortAscending: Bool? = nil,
         showHiddenFiles: Bool = false,
         showFileExtensions: Bool = true
     ) {
@@ -73,6 +84,15 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             ?? viewMode
             ?? .details
         self.viewMode = resolvedViewMode
+
+        if let savedSort = FolderViewSettingsStore.shared.sortSettings(for: initialDestination) {
+            self.sortField = savedSort.field
+            self.sortAscending = savedSort.ascending
+        } else {
+            self.sortField = sortField ?? .name
+            self.sortAscending = sortAscending ?? true
+        }
+
         self.showHiddenFiles = showHiddenFiles
         self.showFileExtensions = showFileExtensions
         loadCurrentDestination()
@@ -329,6 +349,21 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
         }
     }
 
+    private func applySavedFolderSettings(for destination: NavigationDestination) {
+        isNavigating = true
+        if let savedMode = FolderViewSettingsStore.shared.viewMode(for: destination) {
+            self.viewMode = savedMode
+        }
+        if let savedSort = FolderViewSettingsStore.shared.sortSettings(for: destination) {
+            self.sortField = savedSort.field
+            self.sortAscending = savedSort.ascending
+        } else {
+            self.sortField = .name
+            self.sortAscending = true
+        }
+        isNavigating = false
+    }
+
     // MARK: - Navigation
     public func navigate(to newDestination: NavigationDestination, recordHistory: Bool = true) {
         if newDestination == destination {
@@ -340,10 +375,8 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
             backStack.append(destination)
             forwardStack.removeAll()
         }
+        applySavedFolderSettings(for: newDestination)
         destination = newDestination
-        if let savedMode = FolderViewSettingsStore.shared.viewMode(for: newDestination) {
-            self.viewMode = savedMode
-        }
         selectedURLs.removeAll()
         lastClickedURL = nil
         searchQuery = ""
@@ -397,8 +430,10 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     public func goBack() {
         guard let previous = backStack.popLast() else { return }
         forwardStack.append(destination)
+        applySavedFolderSettings(for: previous)
         destination = previous
         selectedURLs.removeAll()
+        lastClickedURL = nil
         searchQuery = ""
         loadCurrentDestination()
     }
@@ -406,8 +441,10 @@ public final class ExplorerTabViewModel: ObservableObject, Identifiable {
     public func goForward() {
         guard let next = forwardStack.popLast() else { return }
         backStack.append(destination)
+        applySavedFolderSettings(for: next)
         destination = next
         selectedURLs.removeAll()
+        lastClickedURL = nil
         searchQuery = ""
         loadCurrentDestination()
     }

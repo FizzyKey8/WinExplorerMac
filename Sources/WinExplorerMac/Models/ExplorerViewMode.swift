@@ -40,7 +40,7 @@ public enum ExplorerViewMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
-public enum ExplorerSortField: String, CaseIterable, Identifiable {
+public enum ExplorerSortField: String, CaseIterable, Identifiable, Codable {
     case name = "Nombre"
     case dateModified = "Fecha de modificación"
     case type = "Tipo"
