@@ -197,7 +197,6 @@ public struct Win11FolderContentView: View {
                                 onDragEnded: handleDragEnded
                             )
                             .id(item.url)
-                            .zIndex(tab.renamingURL == item.url ? 999 : 0)
                         }
                     }
                     .padding(16)
@@ -459,7 +458,7 @@ struct Win11GridItemCell: View {
         }
         .padding(8)
         .frame(width: isRenaming ? max(180, tab.viewMode.gridCellWidth + 50) : tab.viewMode.gridCellWidth)
-        .zIndex(isRenaming ? 50 : 0)
+        .zIndex(isRenaming ? 999 : 0)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(isRenaming ? Color.clear : cellBackground)
@@ -476,12 +475,13 @@ struct Win11GridItemCell: View {
                 )
             }
         )
-        .onHover { hovering in
-            isHovered = hovering
-        }
         .overlay {
             if !isRenaming {
                 Win11MouseHandlerView(
+                    toolTip: item.isNameTruncated(viewMode: tab.viewMode, showExtensions: tab.showFileExtensions) ? item.displayName(showExtensions: tab.showFileExtensions) : nil,
+                    onHoverChanged: { hovering in
+                        isHovered = hovering
+                    },
                     onSingleClick: { modifiers in
                         windowVM.dismissContextMenu()
                         tab.handleItemClick(item, modifiers: modifiers)
@@ -578,6 +578,7 @@ struct Win11ListItemRow: View {
         }
         .padding(.horizontal, 8)
         .frame(height: 28)
+        .zIndex(isRenaming ? 50 : 0)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(isSelected ? Win11Theme.selectionFill(colorScheme) : (isHovered ? Win11Theme.hoverFill(colorScheme) : Color.clear))
@@ -590,12 +591,13 @@ struct Win11ListItemRow: View {
                 )
             }
         )
-        .onHover { hovering in
-            isHovered = hovering
-        }
         .overlay {
             if !isRenaming {
                 Win11MouseHandlerView(
+                    toolTip: item.isNameTruncated(viewMode: .list, showExtensions: tab.showFileExtensions) ? item.displayName(showExtensions: tab.showFileExtensions) : nil,
+                    onHoverChanged: { hovering in
+                        isHovered = hovering
+                    },
                     onSingleClick: { modifiers in
                         windowVM.dismissContextMenu()
                         tab.handleItemClick(item, modifiers: modifiers)
@@ -705,6 +707,7 @@ private struct Win11DetailsTableRow: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 30)
+        .zIndex(isRenaming ? 50 : 0)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
                 .fill(rowBackground)
@@ -721,12 +724,13 @@ private struct Win11DetailsTableRow: View {
                 )
             }
         )
-        .onHover { hovering in
-            isHovered = hovering
-        }
         .overlay {
             if !isRenaming {
                 Win11MouseHandlerView(
+                    toolTip: item.isNameTruncated(viewMode: .details, showExtensions: tab.showFileExtensions) ? item.displayName(showExtensions: tab.showFileExtensions) : nil,
+                    onHoverChanged: { hovering in
+                        isHovered = hovering
+                    },
                     onSingleClick: { modifiers in
                         windowVM.dismissContextMenu()
                         tab.handleItemClick(item, modifiers: modifiers)

@@ -89,6 +89,45 @@ public struct FileItem: Identifiable, Hashable, Sendable {
         return url.deletingPathExtension().lastPathComponent
     }
 
+    public func isNameTruncated(viewMode: ExplorerViewMode, showExtensions: Bool) -> Bool {
+        let text = displayName(showExtensions: showExtensions)
+        let font = NSFont.systemFont(ofSize: 12)
+
+        switch viewMode {
+        case .extraLargeIcons, .largeIcons, .mediumIcons:
+            let availableWidth = max(40, viewMode.gridCellWidth - 16)
+            let boundingBox = (text as NSString).boundingRect(
+                with: CGSize(width: availableWidth, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: font]
+            )
+            let singleLine = (text as NSString).boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin],
+                attributes: [.font: font]
+            )
+            return boundingBox.height > 32 || singleLine.width > (availableWidth * 1.85)
+
+        case .list:
+            let availableWidth: CGFloat = 164
+            let singleLine = (text as NSString).boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin],
+                attributes: [.font: font]
+            )
+            return singleLine.width > availableWidth
+
+        case .details:
+            let availableWidth: CGFloat = 200
+            let singleLine = (text as NSString).boundingRect(
+                with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin],
+                attributes: [.font: NSFont.systemFont(ofSize: 12.5)]
+            )
+            return singleLine.width > availableWidth
+        }
+    }
+
     public var formattedSize: String {
         if isDirectory {
             return ""
